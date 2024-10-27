@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: test
     env:
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-credentials.json
       OPEN_WEATHER_API_KEY: ${{ secrets.OPEN_WEATHER_API_KEY }}
       COUNTRY_CITY_API_KEY: ${{ secrets.COUNTRY_CITY_API_KEY }}
       CITY_NAMES: lagos,ibadan,kano,accra,abuja,pretoria
@@ -52,8 +52,7 @@ jobs:
 
     - name: Set up Google Application Credentials
       run: |
-          echo "$GOOGLE_APPLICATION_CREDENTIALS" > $HOME/google_credentials.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/google_credentials.json
+          echo '${{ secrets.GCP_CREDENTIALS }}' > ${{ github.workspace }}/gcp-credentials.json  # Changed this line
 
     - name: Run tests
       run: poetry run pytest
