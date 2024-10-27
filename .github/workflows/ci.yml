@@ -1,0 +1,59 @@
+name: Weather ETL Pipeline to BigQuery
+
+on:
+  push:
+    branches: [ main]
+  pull_request:
+    branches: [ main]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        pip install poetry
+        poetry install
+    - name: Run pre-commit
+      run: |
+        poetry run pre-commit run --all-files
+
+  test:
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+      OPEN_WEATHER_API_KEY: ${{ secrets.OPEN_WEATHER_API_KEY }}
+      COUNTRY_CITY_API_KEY: ${{ secrets.COUNTRY_CITY_API_KEY }}
+      CITY_NAMES: lagos,ibadan,kano,accra,abuja,pretoria
+      COUNTRY_NAMES: nigeria,ghana,south africa
+      FIELDS: name,lat,lon,country,state
+      WEATHER_FIELDS_EXCLUDE: minutely,hourly,daily,alerts
+      START_DATE_YEAR: "2024"
+      END_DATE_YEAR: "2024"
+
+    needs: pre-commit
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        pip install poetry
+        poetry install
+
+    - name: Set up Google Application Credentials
+      run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS" > $HOME/google_credentials.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$HOME/google_credentials.json
+
+    - name: Run tests
+      run: poetry run pytest
