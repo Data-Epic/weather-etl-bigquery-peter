@@ -355,54 +355,54 @@ def query_bigquery_existing_data(
     if not isinstance(table_id, str):
         raise ValueError("Invalid table ID. Table ID argument must be a string")
 
-    # try:
-    client = bigquery.Client()
-    record_list = []
-    record_ids = []
+    try:
+        client = bigquery.Client()
+        record_list = []
+        record_ids = []
 
-    for record in data:
-        record = {
-            key: value.lower() if isinstance(value, str) else value
-            for key, value in record.items()
-        }
-        hash_key = hash_function(record)["hash_key"]
+        for record in data:
+            record = {
+                key: value.lower() if isinstance(value, str) else value
+                for key, value in record.items()
+            }
+            hash_key = hash_function(record)["hash_key"]
 
-        print("hash_key", hash_key)
-        record["id"] = hash_key
-        record_list.append(record)
-        record_ids.append(hash_key)
+            print("hash_key", hash_key)
+            record["id"] = hash_key
+            record_list.append(record)
+            record_ids.append(hash_key)
 
-    table_ref = client.get_table(table_id)
+        table_ref = client.get_table(table_id)
 
-    existing_data = (
-        client.list_rows(
-            table_ref,
+        existing_data = (
+            client.list_rows(
+                table_ref,
+            )
+            .to_dataframe()
+            .to_dict(orient="records")
         )
-        .to_dataframe()
-        .to_dict(orient="records")
-    )
-    existing_ids = []
-    for data in existing_data:
-        if data["id"] in record_ids:
-            existing_ids.append(data["id"])
+        existing_ids = []
+        for data in existing_data:
+            if data["id"] in record_ids:
+                existing_ids.append(data["id"])
 
-    return {
-        "status": "success",
-        "message": "Existing data queried successfully",
-        "body": {
-            "existing_data": existing_data,
-            "existing_ids": existing_ids,
-            "record_list": record_list,
-            "record_ids": record_ids,
-        },
-    }
+        return {
+            "status": "success",
+            "message": "Existing data queried successfully",
+            "body": {
+                "existing_data": existing_data,
+                "existing_ids": existing_ids,
+                "record_list": record_list,
+                "record_ids": record_ids,
+            },
+        }
 
-    # except Exception as e:
-    #     return {
-    #         "status": "error",
-    #         "message": "An error occurred while querying existing data",
-    #         "error": str(e)
-    #     }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": "An error occurred while querying existing data",
+            "error": str(e),
+        }
 
 
 def create_table(
