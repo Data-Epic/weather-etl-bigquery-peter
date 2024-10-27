@@ -1,5 +1,3 @@
-# Weather-ETL-Peter
-
 # Weather ETL with Airflow and Docker
 
 ## Overview
