@@ -43,6 +43,10 @@ from helpers.weather_etl import (
     join_date_dim_with_weather_fact,
 )
 
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+
 
 def retrieve_country_codes():
     result = get_country_code(AIRFLOW_COUNTRY_NAMES)
@@ -138,85 +142,80 @@ def join_date_dim_and_fact():
     return job_result
 
 
-# call the functions
+dag = DAG(
+    dag_id="weather_etl_dag_hourly",
+    start_date=datetime.datetime(2024, 9, 24),
+    schedule_interval=timedelta(hours=1),
+    description="Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into a Postgres database",
+    catchup=False,
+    tags=["weather"],
+    max_active_runs=1,
+    render_template_as_native_obj=True,
+)
 
-load_location_dim()
-load_weather_type_dim()
-load_date_dim()
-join_date_dim_and_fact()
+get_country_codes_task = PythonOperator(
+    task_id="get_country_codes",
+    python_callable=retrieve_country_codes,
+    dag=dag,
+)
 
+retrieve_weather_fields_task = PythonOperator(
+    task_id="retrieve_weather_fields",
+    python_callable=retrieve_weather_fields,
+    dag=dag,
+)
 
-# dag = DAG(
-#     dag_id = "weather_etl_dag_hourly",
-#     start_date=datetime.datetime(2024, 9, 24),
-#     schedule_interval=timedelta(hours=1),
-#     description="Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into a Postgres database",
-#     catchup=False,
-#     tags=["weather"],
-#     max_active_runs=1,
-#     render_template_as_native_obj=True)
+restructure_weather_fields_task = PythonOperator(
+    task_id="restructure_weather_fields",
+    python_callable=restructure_weather_fields,
+    dag=dag,
+)
 
-# get_country_codes_task = PythonOperator(
-#     task_id="get_country_codes",
-#     python_callable=retrieve_country_codes,
-#     dag=dag,
-# )
+merge_weather_data_task = PythonOperator(
+    task_id="merge_weather_data",
+    python_callable=merge_weather_data,
+    dag=dag,
+)
 
-# get_weather_info_task = PythonOperator(
-#     task_id="get_weather_info",
-#     python_callable=get_weather_info,
-#     dag=dag,
-# )
+transform_records_task = PythonOperator(
+    task_id="transform_records",
+    python_callable=transform_records,
+    dag=dag,
+)
 
-# get_weather_fields_dict_task = PythonOperator(
-#     task_id="get_weather_fields_dict",
-#     python_callable=restructure_weather_data,
-#     dag=dag,
-# )
+load_location_dim_task = PythonOperator(
+    task_id="load_location_dim", python_callable=load_location_dim, dag=dag
+)
 
-# merge_weather_data_task = PythonOperator(
-#     task_id="merge_weather_data",
-#     python_callable=merge_weather_data,
-#     dag=dag,
-# )
+load_weather_type_dim_task = PythonOperator(
+    task_id="load_weather_type_dim",
+    python_callable=load_weather_type_dim,
+    dag=dag,
+)
 
-# transform_records_task = PythonOperator(
-#     task_id="transform_records",
-#     python_callable=transform_records,
-#     dag=dag,
-# )
+load_date_dim_task = PythonOperator(
+    task_id="load_date_dim",
+    python_callable=load_date_dim,
+    dag=dag,
+)
 
-# load_location_dim_task = PythonOperator(
-#     task_id="load_location_dim",
-#     python_callable=load_location_dim,
-#     dag=dag
-# )
+join_date_dim_with_fact_task = PythonOperator(
+    task_id="join_date_dim_with_fact",
+    python_callable=join_date_dim_and_fact,
+    dag=dag,
+)
 
-# load_weather_type_dim_task = PythonOperator(
-#     task_id="load_weather_type_dim",
-#     python_callable=load_weather_type_dim,
-#     dag=dag,
-# )
+(
+    get_country_codes_task
+    >> retrieve_weather_fields_task
+    >> restructure_weather_fields_task
+    >> merge_weather_data_task
+    >> transform_records_task
+    >> load_location_dim_task
+    >> load_weather_type_dim_task
+    >> load_date_dim_task
+    >> join_date_dim_with_fact_task
+)
 
-# load_date_dim_task = PythonOperator(
-#     task_id="load_date_dim",
-#     python_callable=load_date_dim,
-#     dag=dag,
-# )
-
-# join_date_dim_with_fact_task = PythonOperator(
-#     task_id="join_date_dim_with_fact",
-#     python_callable=join_date_dim_and_fact,
-#     dag=dag,
-# )
-
-# (       get_country_codes_task >> get_weather_info_task >>
-#         get_weather_fields_dict_task >> merge_weather_data_task >> transform_records_task >>
-#         load_location_dim_task >> load_weather_type_dim_task >> load_date_dim_task >>
-#         join_date_dim_with_fact_task
-
-
-# )
-
-# if __name__ == "__main__":
-#     dag.test()
+if __name__ == "__main__":
+    dag.test()
