@@ -82,6 +82,7 @@ BIGQUERY_TABLE_LOCATION=your_location_table_name
 BIGQUERY_TABLE_DATE=your_date_table_name
 BIGQUERY_TABLE_WEATHER_FACT=your_fact_table_name
 BIGQUERY_TABLE_WEATHER_TYPE=your_weather_type_table
+```
 
 ### 5. Build and Run the Docker Services
 Run the following command to start the services:
@@ -408,16 +409,16 @@ if __name__ == "__main__":
 
 4. How the DAG works:
 
-1. The DAG starts by getting country codes for the specified countries.
-2. It then fetches geographical information for the specified cities using these country codes.
-3. The geographical fields are extracted and separated into two parts: geographical information (city, country, state) and longitude/latitude data.
-4. The current weather data from the API is merged with the country and state information.
-5. The merged current weather records are then transformed into a more structured format.
-6. It then loads the transformed weather records into the Location dimension table in Bigquery. It also checks if the corresponding records already exist in the weather fact table. If the records do not exist in the fact table, it inserts the records into the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
-7. It loads the transformed weather records into the Weather Type Dimension table in the BigQuery. It also checks if the corresponding records already exist in the fact table. If the records do not exist in the fact table, it inserts the records in the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
-8. It loads the transformed weather records into the Date Dimension table in BigQuery. It also checks if the records already exist in the date dimension table. If the records do not exist in the date dimension table, it inserts the records into the date dimension.
-9. It now joins the Date Dimension table with the Weather Fact table in BigQuery. It checks if the records already exist in the date dimension table and the weather fact table. If the records exist in both tables, it joins the records by updating the date_id field in the weather fact table.
-10. All dimension tables in the Bigquery dataset, do not accept duplicates nor can be overwritten when the airflow DAG reruns, only the fact tables can overwritten.
+  - The DAG starts by getting country codes for the specified countries.
+  - It then fetches geographical information for the specified cities using these country codes.
+  - The geographical fields are extracted and separated into two parts: geographical information (city, country, state) and longitude/latitude data.
+  - The current weather data from the API is merged with the country and state information.
+  - The merged current weather records are then transformed into a more structured format.
+  - It then loads the transformed weather records into the Location dimension table in Bigquery. It also checks if the corresponding records already exist in the weather fact table. If the records do not exist in the fact table, it inserts the records into the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
+  - It loads the transformed weather records into the Weather Type Dimension table in the BigQuery. It also checks if the corresponding records already exist in the fact table. If the records do not exist in the fact table, it inserts the records in the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
+  - It loads the transformed weather records into the Date Dimension table in BigQuery. It also checks if the records already exist in the date dimension table. If the records do not exist in the date dimension table, it inserts the records into the date dimension.
+  - It now joins the Date Dimension table with the Weather Fact table in BigQuery. It checks if the records already exist in the date dimension table and the weather fact table. If the records exist in both tables, it joins the records by updating the date_id field in the weather fact table.
+  - All dimension tables in the Bigquery dataset, do not accept duplicates nor can be overwritten when the airflow DAG reruns, only the fact tables can overwritten.
 
 Configuration
 The DAG uses several configuration variables:
