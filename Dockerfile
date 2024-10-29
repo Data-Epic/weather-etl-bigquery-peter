@@ -24,13 +24,6 @@ RUN wget https://www.python.org/ftp/python/3.10.12/Python-3.10.12.tgz && \
     cd .. && \
     rm -rf Python-3.10.12 Python-3.10.12.tgz
 
-
-RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
-
-RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
-
-RUN apt-get update && apt-get install -y google-cloud-sdk
-
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=off \
@@ -49,6 +42,9 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry env use python3.10
 RUN poetry install --no-dev --no-root
 
-COPY --chown=airflow:airflow dags/ ./dags
-COPY --chown=airflow:airflow config ./config
-COPY --chown=airflow:airflow helpers ./helpers
+COPY --chown=airflow:airflow /helpers ./helpers
+COPY --chown=airflow:airflow /config ./config
+COPY --chown=airflow:airflow /dags ./dags
+COPY --chown=airflow:airflow gck.json ./gck.json
+
+ENV PYTHONPATH="${WORKDIR}/helpers:${WORKDIR}/config:${PYTHONPATH}"
