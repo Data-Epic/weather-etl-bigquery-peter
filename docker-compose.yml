@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow_db
+      POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
     healthcheck:
@@ -38,9 +38,9 @@ services:
       - .env
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./gck.json:/opt/airflow/gck.json
       - ./config:/opt/airflow/config
       - ./helpers:/opt/airflow/helpers
+      - ./gck.json:/opt/airflow/gck.json
 
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
@@ -59,9 +59,9 @@ services:
       - .env
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./gck.json:/opt/airflow/gck.json
       - ./config:/opt/airflow/config
       - ./helpers:/opt/airflow/helpers
+      - ./gck.json:/opt/airflow/gck.json
 
 volumes:
   postgres-db-volume:
