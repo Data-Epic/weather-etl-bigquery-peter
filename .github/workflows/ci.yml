@@ -52,7 +52,7 @@ jobs:
 
     - name: Set up Google Application Credentials
       run: |
-          echo '${{ secrets.GCP_CREDENTIALS }}' > ${{ github.workspace }}/gcp-credentials.json  # Changed this line
+          echo '${{ secrets.GCP_CREDENTIALS }}' > ${{ github.workspace }}/gcp-credentials.json
 
     - name: Run tests
       run: poetry run pytest
