@@ -366,8 +366,6 @@ def query_bigquery_existing_data(
                 for key, value in record.items()
             }
             hash_key = hash_function(record)["hash_key"]
-
-            print("hash_key", hash_key)
             record["id"] = hash_key
             record_list.append(record)
             record_ids.append(hash_key)
@@ -924,7 +922,6 @@ def validate_city(
 
             response = requests.request("GET", url, headers=headers)
             data = response.json()
-            print("data", data)
 
             if data:
                 country_cities = []
@@ -952,8 +949,6 @@ def validate_city(
                     "message": f"Unable to validate the city name for {country_code}",
                     "error": f"City name not found in the country code: {country_code}",
                 }
-
-        print("validated_country_cities_dict", validated_country_cities_dict)
 
         return {
             "status": "success",
@@ -1122,8 +1117,6 @@ def update_table_existing_record(
         existing_dim_record = existing_dim_records[0]
         dim_record_to_update = existing_dim_record
 
-        print("dim_record_to_update", dim_record_to_update)
-
         for key, value in record_to_update_mapper.items():
             if isinstance(value, tuple):
                 if key == "date":
@@ -1147,7 +1140,6 @@ def update_table_existing_record(
 
         update_dim_record = update_records(dim_table_id, dim_record_to_update)
 
-        print("update_dim_record", update_dim_record)
         dim_table_name = dim_table_id.split(".")[1]
 
         if update_dim_record["status"] != "success":
