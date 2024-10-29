@@ -96,11 +96,13 @@ This will launch:
 2. Log in with the default credentials (`airflow`/`airflow`).
 3. Add your cities and countries in **Admin > Variables** (e.g., key: `CITY_NAMES`, value: `Abuja, Ife, Lagos, Accra, Pretoria`) (e.g., key: `COUNTRY_NAMES`, value: `Nigeria, South Africa, Ghana`).
 
+**Airflow UI Variables:**
 ![Setting Environment Variables](images/dag_variables.jpg)
 
 4. Navigate to the DAGs section to manually trigger `weather_etl_dag`, or wait for it to run according to its schedule to begin and fetching and loading data.
 
-![Airflow DAG Execution](images/dag_dag.jpg)
+**Airflow DAG Execution:**
+![Airflow DAG Execution](images/dags.jpg)
 
 ### 7. Stopping and Cleaning Up Services
 To stop the services:
@@ -262,7 +264,7 @@ The processed weather records are now loaded into their modeled respective table
 
 **Database Model Diagram:**
 
-![DB Model Diagram](images/db_model_diagram.png)
+![DB Model Diagram](images/db_model.png)
 
 # Weather ETL DAG Explanation
 
@@ -325,83 +327,79 @@ The DAG is structured as follows:
 
 ```python
 
-dag = DAG(
+
+with DAG(
     dag_id="weather_etl_dag_hourly",
-    start_date=datetime.datetime(2024, 9, 24),
+    start_date=datetime(2024, 10, 29),
     schedule_interval=timedelta(hours=1),
-    description="Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into a Postgres database",
+    description="Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into BigQuery",
     catchup=False,
     tags=["weather"],
     max_active_runs=1,
     render_template_as_native_obj=True,
-)
+) as dag:
+    create_dataset_task = PythonOperator(
+        task_id="create_bigquery_dataset",
+        python_callable=create_bigquery_dataset,
+    )
 
-get_country_codes_task = PythonOperator(
-    task_id="get_country_codes",
-    python_callable=retrieve_country_codes,
-    dag=dag,
-)
+    get_country_codes_task = PythonOperator(
+        task_id="get_country_codes",
+        python_callable=retrieve_country_codes,
+    )
 
-retrieve_weather_fields_task = PythonOperator(
-    task_id="retrieve_weather_fields",
-    python_callable=retrieve_weather_fields,
-    dag=dag,
-)
+    retrieve_weather_fields_task = PythonOperator(
+        task_id="retrieve_weather_fields",
+        python_callable=retrieve_weather_fields,
+    )
 
-restructure_weather_fields_task = PythonOperator(
-    task_id="restructure_weather_fields",
-    python_callable=restructure_weather_fields,
-    dag=dag,
-)
+    restructure_weather_fields_task = PythonOperator(
+        task_id="restructure_weather_fields",
+        python_callable=restructure_weather_fields,
+    )
 
-merge_weather_data_task = PythonOperator(
-    task_id="merge_weather_data",
-    python_callable=merge_weather_data,
-    dag=dag,
-)
+    merge_weather_data_task = PythonOperator(
+        task_id="merge_weather_data",
+        python_callable=merge_weather_data,
+    )
 
-transform_records_task = PythonOperator(
-    task_id="transform_records",
-    python_callable=transform_records,
-    dag=dag,
-)
+    transform_records_task = PythonOperator(
+        task_id="transform_records",
+        python_callable=transform_records,
+    )
 
-load_location_dim_task = PythonOperator(
-    task_id="load_location_dim", python_callable=load_location_dim, dag=dag
-)
+    load_location_dim_task = PythonOperator(
+        task_id="load_location_dim",
+        python_callable=load_location_dim,
+    )
 
-load_weather_type_dim_task = PythonOperator(
-    task_id="load_weather_type_dim",
-    python_callable=load_weather_type_dim,
-    dag=dag,
-)
+    load_weather_type_dim_task = PythonOperator(
+        task_id="load_weather_type_dim",
+        python_callable=load_weather_type_dim,
+    )
 
-load_date_dim_task = PythonOperator(
-    task_id="load_date_dim",
-    python_callable=load_date_dim,
-    dag=dag,
-)
+    load_date_dim_task = PythonOperator(
+        task_id="load_date_dim",
+        python_callable=load_date_dim,
+    )
 
-join_date_dim_with_fact_task = PythonOperator(
-    task_id="join_date_dim_with_fact",
-    python_callable=join_date_dim_and_fact,
-    dag=dag,
-)
+    join_date_dim_with_fact_task = PythonOperator(
+        task_id="join_date_dim_with_fact",
+        python_callable=join_date_dim_and_fact,
+    )
 
-(
-    get_country_codes_task
-    >> retrieve_weather_fields_task
-    >> restructure_weather_fields_task
-    >> merge_weather_data_task
-    >> transform_records_task
-    >> load_location_dim_task
-    >> load_weather_type_dim_task
-    >> load_date_dim_task
-    >> join_date_dim_with_fact_task
-)
-
-if __name__ == "__main__":
-    dag.test()
+    (
+        create_dataset_task
+        >> get_country_codes_task
+        >> retrieve_weather_fields_task
+        >> restructure_weather_fields_task
+        >> merge_weather_data_task
+        >> transform_records_task
+        >> load_location_dim_task
+        >> load_weather_type_dim_task
+        >> load_date_dim_task
+        >> join_date_dim_with_fact_task
+    )
 
 ```
 
@@ -432,9 +430,23 @@ The DAG uses several configuration variables:
 
 The DAG is scheduled to run every hour, ensuring that the Bigquery dataset is regularly updated with the latest weather information for the specified cities.
 
-Airflow Variables
-![Airflow Variables](images/dag_variables.jpg)
+**Airflow UI Variables:**
+![Airflow UI Variables](images/dag_variables.jpg)
 
 
-Dag Workflow
+**DAG Worfklow:**
 ![Airflow DAG Success](images/dag_dag.jpg)
+
+5. Tables Querying in BigQuery
+
+  - Location Table Query Result:
+
+  ![Location Table Query](images/query1.jpg)
+
+  - Weather Table Query Result:
+
+  ![Weather Table Query](images/query3.jpg)
+
+  - Date Table Query Result:
+
+  ![Date Table Query](images/query2.jpg)
