@@ -101,8 +101,9 @@ This will launch:
 
 4. Navigate to the DAGs section to manually trigger `weather_etl_dag`, or wait for it to run according to its schedule to begin and fetching and loading data.
 
-**Airflow DAG Execution:**
-![Airflow DAG Execution](images/dags.jpg)
+  **Airflow DAG Execution:**
+
+  ![Airflow DAG Execution](images/dags.jpg)
 
 ### 7. Stopping and Cleaning Up Services
 To stop the services:
@@ -260,7 +261,7 @@ The merged data is transformed into a list of dictionaries, where each dictionar
 ### 6. Data Modeling and Loading into BigQuery (Final Step)
 
 #### Data Modeling
-The processed weather records are now loaded into their modeled respective tables in Bigquery, using a delete-write pattern to avoid duplicates. A Bigquery billing account was set up.
+The processed weather records are now loaded into their modeled respective tables utilizing a 3NF into Bigquery, It leverages a delete-write pattern to avoid duplicates. A Bigquery sandbox account was setup.
 
 **Database Model Diagram:**
 
@@ -435,7 +436,7 @@ The DAG is scheduled to run every hour, ensuring that the Bigquery dataset is re
 
 
 **DAG Worfklow:**
-![Airflow DAG Success](images/dag_dag.jpg)
+![Airflow DAG Success](images/dags.jpg)
 
 5. Tables Querying in BigQuery
 
