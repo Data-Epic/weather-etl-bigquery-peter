@@ -98,7 +98,6 @@ class TestGetCountryCode:
         invalid_input = "invaid country name"
         result = get_country_code(invalid_input)
 
-        print("result", result)
         assert result["status"] == "error"
         assert (
             result["message"]
@@ -224,7 +223,6 @@ class TestGetWeatherFields:
             country_city_api_key="test_key",
         )
 
-        print("result", result)
         assert result["status"] == "error"
         assert (
             result["message"]
@@ -361,7 +359,6 @@ class TestMergeCurrentWeatherData:
         }
         result = merge_current_weather_data(**invalid_input)
 
-        print("result", result)
         assert result["status"] == "error"
         assert "Invalid input type" in result["message"]
 

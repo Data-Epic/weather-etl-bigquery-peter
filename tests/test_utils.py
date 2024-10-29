@@ -1048,8 +1048,6 @@ def test_update_data_fact_table_success(
 
             result = update_data_to_fact_table(fact_table_id, mock_weather_record)
 
-            print("result", result)
-
             assert result["status"] == "success"
             assert (
                 result["message"]
@@ -1516,7 +1514,7 @@ class TestInsertOrUpdateRecordsToFactTable:
             insert_or_update_records_to_fact_table(
                 dim_table_id=dim_table_id,
                 fact_table_id=fact_table_id,
-                new_record=["not", "a", "dict"],  # Invalid
+                new_record=["not", "a", "dict"],
                 fact_column_to_match="id",
                 new_record_column_to_match="id",
                 fact_hash_function=fact_hash_function,
