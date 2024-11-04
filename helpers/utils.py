@@ -565,102 +565,13 @@ def insert_new_records(table_id: str, new_record: Dict[str, Any]) -> Dict[str, A
         }
 
 
-def update_records(table_id: str, new_record: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Function to update existing records in a BigQuery table
-
-    Args:
-    table_id (str): The ID of the table
-    new_record (Dict[str, Any]): A dictionary containing the new records to be updated in the table
-
-    Returns:
-    Dict[str, Any]: A dictionary containing the status of the operation
-
-    Example:
-    >>> table_id = 'your-project.your_dataset.location_dim'
-    >>> new_record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
-    ...
-    >>> result = update_records(dataset_id, table_id, new_record)
-    >>> print(result)
-    {
-        "status": "success",
-        "message": "New records inserted successfully",
-        "record": new_record
-    }
-    """
-    try:
-        client = bigquery.Client()
-
-        tmp_file_name = "/tmp/new_records.json"
-        with open(tmp_file_name, "w") as file:
-            json.dump(new_record, file)
-            file.write("\n")
-
-        job_config = bigquery.LoadJobConfig(
-            source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-            autodetect=False,
-        )
-
-        with open(tmp_file_name, "rb") as file:
-            job = client.load_table_from_file(file, table_id, job_config=job_config)
-
-        job_result = job.result()
-
-        if job_result:
-            os.remove(tmp_file_name)
-
-            logger.info(
-                {
-                    "status": "success",
-                    "message": "New record is updated successfully",
-                    "record": new_record,
-                }
-            )
-
-            return {
-                "status": "success",
-                "message": "New record is updated successfully",
-                "record": new_record,
-            }
-
-        else:
-            logger.info(
-                {
-                    "status": "error",
-                    "message": "Update records Job wasn't executed successfully",
-                    "job_result": job_result,
-                }
-            )
-            return {
-                "status": "error",
-                "message": "Update records Job wasn't executed successfully",
-                "job_result": job_result,
-            }
-
-    except Exception as e:
-        error_logger.error(
-            {
-                "status": "error",
-                "message": "An error occurred while updating records",
-                "error": str(e),
-            }
-        )
-
-        return {
-            "status": "error",
-            "message": "An error occurred while updating records",
-            "error": str(e),
-        }
-
-
-def insert_data_to_fact_table(
-    table_id: str, new_record: Dict[str, Any], hash_function: callable
+def update_fact_record(
+    new_record: Dict[str, Any], hash_function: callable
 ) -> Dict[str, Any]:
     """
-    Function to insert new records into the fact table
+    Function to update the fact record for the corresponding dimension record and also the current weather data
 
     Args:
-    table_id (str): The ID of the fact table
     new_record (Dict[str, Any]): A dictionary containing the new records to be inserted
     hash_function (callable): A function to generate hash keys for the records
 
@@ -668,15 +579,14 @@ def insert_data_to_fact_table(
     Dict[str, Any]: A dictionary containing the status of the operation
 
     Example:
-    >>> table_id = 'your-project.your_dataset.location_dim'
     >>> new_record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
     ...
-    >>> result = insert_data_to_fact_table(dataset_id, table_id, new_record, gen_hash_key_location_dim)
+    >>> result = update_fact_record(new_record, gen_hash_key_location_dim)
     >>> print(result)
     {
         "status": "success",
-        "message": "New records inserted successfully to the fact table",
-        "record": new_record
+        "message": "Current weather records and corresponding dimension records updated successfully",
+        "record": record_to_update,
     }
     """
 
@@ -684,13 +594,11 @@ def insert_data_to_fact_table(
         raise ValueError(
             "Invalid hash function. Hash function argument must be a callable"
         )
-    if not isinstance(table_id, str):
-        raise ValueError("Invalid table ID. Table ID argument must be a string")
     if not isinstance(new_record, dict):
         raise ValueError("Invalid data format. Data argument must be a dictionary")
 
     try:
-        record_to_load = {
+        record_to_update = {
             "id": hash_function()["hash_key"],
             "location_id": new_record["id"],
             "temperature": new_record["temp"],
@@ -710,134 +618,109 @@ def insert_data_to_fact_table(
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        insert_fact_record = insert_new_records(table_id, record_to_load)
+        print("record_to_update", record_to_update)
 
-        if insert_fact_record["status"] == "success":
-            logger.info(
-                {
-                    "status": "success",
-                    "message": "New records inserted successfully to the fact table",
-                    "record": record_to_load,
-                }
-            )
-            return {
+        logger.info(
+            {
                 "status": "success",
-                "message": "New records inserted successfully to the fact table",
-                "record": record_to_load,
+                "message": "Current weather records and corresponding dimension records updated successfully",
+                "record": record_to_update,
             }
+        )
+        return {
+            "status": "success",
+            "message": "Current weather records and corresponding dimension records updated successfully",
+            "record": record_to_update,
+        }
 
     except Exception as e:
         error_logger.error(
             {
                 "status": "error",
-                "message": "An error occurred while inserting record to the fact table",
+                "message": "An error occurred while updating corresponding dimension record to the fact record",
                 "error": str(e),
             }
         )
         return {
             "status": "error",
-            "message": "An error occurred while inserting record to the fact table",
+            "message": "An error occurred while updating corresponding dimension record to the fact record",
             "error": str(e),
         }
 
 
-def update_data_to_fact_table(
-    fact_table_id: str, record: Dict[str, Any]
-) -> Dict[str, Any]:
+def update_existing_fact_record(
+    existing_fact_records: List[Dict[str, Any]],
+    new_record: Dict[str, Any],
+    record_to_update_mapper: Dict[str, Any],
+):
     """
-    Function to update existing records in the fact table
+    Function to update existing records in a table
 
     Args:
-    fact_table_id (str): The ID of the fact table
+    existing_fact_records (List[Dict[str, Any]]): A list of dictionaries containing the existing records in the fact table
+    new_record (Dict[str, Any]): A dictionary containing the new records to be updated in the table
+    record_to_update_mapper (Dict[str, Any]): A dictionary containing the record to update to the fact record
 
     Returns:
     Dict[str, Any]: A dictionary containing the status of the operation
 
     Example:
-    >>> fact_table_id = 'your-project.your_dataset.location_dim'
-    >>> record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
+    >>> dim_table_id = 'your-project.your_dataset.location_dim'
+    >>> new_record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
     ...
-    >>> result = update_data_to_fact_table(fact_table_id, record)
+    >>> result = update_dim_record(dim_table_id, new_record, 'id', 'id', record_to_update_mapper)
     >>> print(result)
     {
         "status": "success",
-        "message": "New records updated successfully to the fact table",
-        "record": record
+        "message": "New records updated successfully to the dimension table",
+        "record": new_record
     }
     """
-
-    if not isinstance(fact_table_id, str):
-        raise ValueError("Invalid table ID. Table ID argument must be a string")
-    if not isinstance(record, dict):
+    if not isinstance(new_record, dict):
         raise ValueError("Invalid data format. Data argument must be a dictionary")
+        raise ValueError("Invalid column name. Column name argument must be a string")
+    if not isinstance(record_to_update_mapper, dict):
+        raise ValueError("Invalid data format. Data argument must be a dictionary")
+    if not isinstance(existing_fact_records, List):
+        raise ValueError(
+            "Invalid data format. Existing dimension records must be a list"
+        )
 
     try:
-        client = bigquery.Client()
-        fact_table_ref = client.get_table(fact_table_id)
-        existing_fact_records = (
-            client.list_rows(fact_table_ref).to_dataframe().to_dict(orient="records")
+        existing_fact_record = existing_fact_records[0]
+        fact_record_to_update = existing_fact_record
+
+        for key, value in record_to_update_mapper.items():
+            fact_record_to_update[key] = new_record[value]
+
+        fact_record_to_update["updated_at"] = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
         )
-        existing_fact_records = [
-            existing_record
-            for existing_record in existing_fact_records
-            if record["id"] == existing_record["location_id"]
-        ]
 
-        if existing_fact_records:
-            existing_fact_record = existing_fact_records[0]
-            fact_record_to_update = existing_fact_record
-
-            fact_record_to_update["temperature"] = (record["temp"],)
-            fact_record_to_update["feels_like"] = (record["feels_like"],)
-            fact_record_to_update["pressure"] = (record["pressure"],)
-            fact_record_to_update["humidity"] = (record["humidity"],)
-            fact_record_to_update["dew_point"] = (record["dew_point"],)
-            fact_record_to_update["ultraviolet_index"] = (record["ultraviolet_index"],)
-            fact_record_to_update["clouds"] = (record["clouds"],)
-            fact_record_to_update["visibility"] = (record["visibility"],)
-            fact_record_to_update["wind_speed"] = (record["wind_speed"],)
-            fact_record_to_update["wind_deg"] = (record["wind_deg"],)
-            fact_record_to_update["sunrise"] = (record["sunrise"],)
-            fact_record_to_update["sunset"] = (record["sunset"],)
-            fact_record_to_update["date"] = (record["date"].isoformat(),)
-            fact_record_to_update["updated_at"] = datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
-            fact_record_to_update["created_at"] = fact_record_to_update[
-                "created_at"
-            ].isoformat()
-
-            for key, value in fact_record_to_update.items():
-                if isinstance(value, tuple):
-                    fact_record_to_update[key] = value[0]
-
-        update_fact_record = update_records(fact_table_id, fact_record_to_update)
-
-        if update_fact_record["status"] == "success":
-            logger.info(
-                {
-                    "status": "success",
-                    "message": "New records updated successfully to the fact table",
-                    "record": fact_record_to_update,
-                }
-            )
-            return {
+        logger.info(
+            {
                 "status": "success",
-                "message": "New records updated successfully to the fact table",
+                "message": "Fact records are updated successfully with the corresponding dimension record",
                 "record": fact_record_to_update,
             }
+        )
+        return {
+            "status": "success",
+            "message": "Fact records are updated successfully with the corresponding dimension record",
+            "record": fact_record_to_update,
+        }
 
     except Exception as e:
         error_logger.error(
             {
                 "status": "error",
-                "message": "An error occurred while inserting record to the fact table",
+                "message": "An error occurred while updating records in the fact record",
                 "error": str(e),
             }
         )
         return {
             "status": "error",
-            "message": "An error occurred while inserting record to the fact table",
+            "message": "An error occurred while updating records in the fact record",
             "error": str(e),
         }
 
@@ -960,226 +843,5 @@ def validate_city(
         return {
             "status": "error",
             "message": "An error occurred while validating the city name",
-            "error": str(e),
-        }
-
-
-def insert_or_update_records_to_fact_table(
-    dim_table_id: str,
-    fact_table_id: str,
-    new_record: Dict[str, Any],
-    fact_column_to_match: str,
-    new_record_column_to_match: str,
-    fact_hash_function: callable,
-) -> Dict[str, Any]:
-    """
-    Function to insert or update records in the fact table
-
-    Args:
-    fact_table_id (str): The ID of the fact table
-    new_record (Dict[str, Any]): A dictionary containing the record to be inserted or updated
-    fact_column_to_match (str): The column in the fact table to match with the record column to determine if the record should be inserted or updated
-    new_record_column_to_match (str): The column in the new record to match with the fact table column to determine if the record should be inserted or updated
-
-    Returns:
-    Dict[str, Any]: A dictionary containing the status of the operation
-
-    Example:
-    >>> fact_table_id = 'your-project.your_dataset.location_dim'
-    >>> record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
-    ...
-    >>> result = insert_or_update_records_to_fact_table(fact_table_id, record, 'location_id')
-    >>> print(result)
-    {
-        "status": "success",
-        "message": "New records inserted or updated successfully to the fact table",
-        "record": record
-    }
-    """
-
-    if not isinstance(fact_table_id, str):
-        raise ValueError("Invalid table ID. Table ID argument must be a string")
-    if not isinstance(new_record, dict):
-        raise ValueError("Invalid data format. Data argument must be a dictionary")
-    if not isinstance(fact_column_to_match, str):
-        raise ValueError("Invalid column name. Column name argument must be a string")
-    if not isinstance(new_record_column_to_match, str):
-        raise ValueError("Invalid column name. Column name argument must be a string")
-
-    try:
-        client = bigquery.Client()
-        fact_table_ref = client.get_table(fact_table_id)
-        existing_fact_records = (
-            client.list_rows(fact_table_ref).to_dataframe().to_dict(orient="records")
-        )
-        existing_fact_records = [
-            existing_record
-            for existing_record in existing_fact_records
-            if new_record[new_record_column_to_match]
-            == existing_record[fact_column_to_match]
-        ]
-        dim_table_name = dim_table_id.split(".")[0]
-
-        # if that record does not exist in the fact table, insert it
-        if not existing_fact_records:
-            insert_fact_record = insert_data_to_fact_table(
-                fact_table_id, new_record, fact_hash_function
-            )
-            if insert_fact_record["status"] != "success":
-                return {
-                    "status": "error",
-                    "message": "An error occurred while inserting corresponding dimension record to the fact table",
-                    "error": insert_fact_record["error"],
-                }
-        else:
-            # if that record exists in the fact table, update it
-            update_fact_record = update_data_to_fact_table(fact_table_id, new_record)
-            if update_fact_record["status"] != "success":
-                return {
-                    "status": "error",
-                    "message": f"An error occurred while updating corresponding {dim_table_name} record to the fact table",
-                    "error": update_fact_record["error"],
-                }
-
-        logger.info(
-            {
-                "status": "success",
-                "message": "New records inserted or updated successfully to the fact table",
-                "record": new_record,
-            }
-        )
-        return {
-            "status": "success",
-            "message": "New records inserted or updated successfully to the fact table",
-            "record": new_record,
-        }
-
-    except Exception as e:
-        error_logger.error(
-            {
-                "status": "error",
-                "message": "An error occurred while inserting record to the fact table",
-                "error": str(e),
-            }
-        )
-        return {
-            "status": "error",
-            "message": "An error occurred while inserting record to the fact table",
-            "error": str(e),
-        }
-
-
-def update_table_existing_record(
-    existing_dim_records: List[Dict[str, Any]],
-    dim_table_id: str,
-    new_record: Dict[str, Any],
-    record_to_update_mapper: Dict[str, Any],
-):
-    """
-    Function to update existing records in a table
-
-    Args:
-    dim_table_id (str): The ID of the dimension table
-    new_record (Dict[str, Any]): A dictionary containing the new records to be updated in the table
-    dim_column_to_match (str): The column in the dimension table to match with the record column to determine if the record should be updated
-    new_record_column_to_match (str): The column in the new record to match with the dimension table column to determine if the record should be updated
-    record_to_update_mapper (Dict[str, Any]): A dictionary containing the record to update in the dimension table
-
-    Returns:
-    Dict[str, Any]: A dictionary containing the status of the operation
-
-    Example:
-    >>> dim_table_id = 'your-project.your_dataset.location_dim'
-    >>> new_record = {'country': 'Nigeria', 'state': 'Lagos', 'city': 'Ikeja'}
-    ...
-    >>> result = update_dim_record(dim_table_id, new_record, 'id', 'id', record_to_update_mapper)
-    >>> print(result)
-    {
-        "status": "success",
-        "message": "New records updated successfully to the dimension table",
-        "record": new_record
-    }
-    """
-
-    if not isinstance(dim_table_id, str):
-        raise ValueError("Invalid table ID. Table ID argument must be a string")
-    if not isinstance(new_record, dict):
-        raise ValueError("Invalid data format. Data argument must be a dictionary")
-        raise ValueError("Invalid column name. Column name argument must be a string")
-    if not isinstance(record_to_update_mapper, dict):
-        raise ValueError("Invalid data format. Data argument must be a dictionary")
-    if not isinstance(existing_dim_records, List):
-        raise ValueError(
-            "Invalid data format. Existing dimension records must be a list"
-        )
-
-    try:
-        existing_dim_record = existing_dim_records[0]
-        dim_record_to_update = existing_dim_record
-
-        for key, value in record_to_update_mapper.items():
-            if isinstance(value, tuple):
-                if key == "date":
-                    dim_record_to_update[key] = dim_record_to_update[
-                        value[0]
-                    ].isoformat()
-                else:
-                    dim_record_to_update[key] = new_record[value[0]]
-
-            if key == "date":
-                dim_record_to_update[key] = dim_record_to_update[value].isoformat()
-            else:
-                dim_record_to_update[key] = new_record[value]
-
-        dim_record_to_update["updated_at"] = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        dim_record_to_update["created_at"] = dim_record_to_update[
-            "created_at"
-        ].isoformat()
-
-        update_dim_record = update_records(dim_table_id, dim_record_to_update)
-
-        dim_table_name = dim_table_id.split(".")[1]
-
-        if update_dim_record["status"] != "success":
-            logger.info(
-                {
-                    "status": "error",
-                    "message": f"An error occurred while updating records in the {dim_table_name} dimension table",
-                    "error": update_dim_record["error"],
-                }
-            )
-
-            return {
-                "status": "error",
-                "message": f"An error occurred while updating records in the {dim_table_name} dimension table",
-                "error": update_dim_record["error"],
-            }
-
-        logger.info(
-            {
-                "status": "success",
-                "message": f"New records updated successfully to the {dim_table_name} dimension table",
-                "record": dim_record_to_update,
-            }
-        )
-        return {
-            "status": "success",
-            "message": f"New records updated successfully to the {dim_table_name} dimension table",
-            "record": dim_record_to_update,
-        }
-
-    except Exception as e:
-        error_logger.error(
-            {
-                "status": "error",
-                "message": "An error occurred while updating records in the dimension table",
-                "error": str(e),
-            }
-        )
-        return {
-            "status": "error",
-            "message": "An error occurred while updating records in the dimension table",
             "error": str(e),
         }
