@@ -21,7 +21,7 @@ from config.config import (
     WEATHER_TYPE_TABLE_NAME,
 )
 
-from helpers.schema import date_dim_schema
+from helpers.schema import date_dim_schema, weather_type_dim_schema, weather_fact_schema
 
 from helpers.utils import (
     gen_hash_key_datedim,
@@ -108,20 +108,24 @@ def load_location_dim(ti):
         FACT_TABLE_NAME,
         gen_hash_key_location_dim,
         gen_hash_key_weatherfact,
-    )
+    )["weather_records"]
     return load_location_dim_records
 
 
 def load_weather_type_dim(ti):
     transformed_records = ti.xcom_pull(task_ids="transform_records")
     dataset_id = ti.xcom_pull(task_ids="create_bigquery_dataset")
+    fact_records = ti.xcom_pull(task_ids="load_location_dim")
     load_weather_type_records = load_records_to_weather_type_dim(
         transformed_records,
         dataset_id,
+        fact_records,
         FACT_TABLE_NAME,
         WEATHER_TYPE_TABLE_NAME,
         gen_hash_key_weather_type_dim,
-    )
+        weather_type_dim_schema,
+        weather_fact_schema,
+    )["weather_records"]
     return load_weather_type_records
 
 
@@ -140,8 +144,9 @@ def load_date_dim(ti):
 
 def join_date_dim_and_fact(ti):
     dataset_id = ti.xcom_pull(task_ids="create_bigquery_dataset")
+    fact_records = ti.xcom_pull(task_ids="load_weather_type_dim")
     job_result = join_date_dim_with_weather_fact(
-        FACT_TABLE_NAME, DATE_TABLE_NAME, dataset_id
+        FACT_TABLE_NAME, DATE_TABLE_NAME, dataset_id, fact_records
     )
     return job_result
 
