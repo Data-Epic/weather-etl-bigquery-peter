@@ -15,21 +15,15 @@ from config.config import (
     logger,
 )
 
-from helpers.schema import (
-    location_dim_schema,
-    weather_fact_schema,
-    weather_type_dim_schema,
-)
 from helpers.utils import (
-    insert_or_update_records_to_fact_table,
-    update_table_existing_record,
     gen_hash_key_location_dim,
     validate_city,
     retrieve_country_code,
     query_bigquery_existing_data,
     insert_new_records,
     create_table,
-    update_records,
+    update_fact_record,
+    update_existing_fact_record,
 )
 
 
@@ -136,8 +130,6 @@ def get_weather_fields(
             country_codes, cities, country_city_api_key
         )["validated_country_cities"]
 
-        print("validated_country_cities", validated_country_cities)
-
         weather_fields_list = []
         retrieved_city_names = []
         for country_code, cities in validated_country_cities.items():
@@ -147,12 +139,14 @@ def get_weather_fields(
                 response = requests.get(url)
 
                 data = response.json()
+
                 if data:
                     data = data[0]
                     for field in fields:
                         weather_dict[field] = data.get(field)
-                        weather_fields_list.append(weather_dict)
-                        retrieved_city_names.append(city_name)
+
+                    weather_fields_list.append(weather_dict)
+                    retrieved_city_names.append(city_name)
 
         logger.info(
             {
@@ -315,16 +309,12 @@ def merge_current_weather_data(
                 for key in data.keys():
                     weather_dict[key] = data[key]
 
-                print("data_keys", data.keys())
-
                 weather_dict["city"] = weather_fields[record_counter]["city"]
                 weather_dict["country"] = weather_fields[record_counter]["country"]
                 weather_dict["state"] = weather_fields[record_counter]["state"]
                 record_counter += 1
 
                 response_list.append(weather_dict)
-
-                print("weather_keys", weather_dict.keys())
 
             except Exception as e:
                 error_logger.error(
@@ -474,11 +464,12 @@ def load_records_to_location_dim(
     fact_table_name: str,
     location_hash_function: Dict[str, str],
     fact_hash_function: Dict[str, str],
+    location_dim_schema: List[bigquery.SchemaField],
+    weather_fact_schema: List[bigquery.SchemaField],
 ) -> Dict[str, Union[str, List[dict]]]:
     """
     This function is used to load the transformed weather records into the Location
-    Dimension table into BigQuery. It also checks if the records already exist in the weather fact table,
-    If the records do not exist in the fact table, it inserts the records into the fact table.
+    Dimension table into BigQuery. It also updates the fact record with the corresponding location record.
 
     Args:
         weather_data (List[dict]): List of dictionaries containing the weather records
@@ -497,7 +488,7 @@ def load_records_to_location_dim(
     {
         "status": "success",
         "message": f"{no_data} location records have been loaded to the location table and corresponding records have been updated to the fact table",
-        "weather_records": new_records[:5],
+        "weather_records": fact_records,
     }
     """
 
@@ -505,6 +496,7 @@ def load_records_to_location_dim(
         create_location_table = create_table(
             dataset_id, location_table_name, location_dim_schema
         )
+
         create_fact_table = create_table(
             dataset_id, fact_table_name, weather_fact_schema
         )
@@ -523,12 +515,10 @@ def load_records_to_location_dim(
             }
 
         location_table_id = create_location_table["table_id"]
-        fact_table_id = create_fact_table["table_id"]
 
         existing_data = query_bigquery_existing_data(
             location_table_id, weather_data, location_hash_function
         )
-        print("existing_data", existing_data)
 
         existing_data = existing_data["body"]
 
@@ -536,8 +526,10 @@ def load_records_to_location_dim(
         record_list = existing_data["record_list"]
 
         no_data = 0
+        no_upd_data = 0
         new_records = []
         newly_added_ids = []
+        fact_records = []
         for record in record_list:
             if record["id"] not in existing_ids:
                 if record["id"] not in newly_added_ids:
@@ -569,60 +561,52 @@ def load_records_to_location_dim(
                     new_records.append(new_record)
                     no_data += 1
 
-                    fact_column_to_match = "location_id"
-                    record_column_to_match = "id"
-
-                    # insert or update the location record in the fact table
-                    insert_or_update_records_to_fact = (
-                        insert_or_update_records_to_fact_table(
-                            location_table_id,
-                            fact_table_id,
-                            record,
-                            fact_column_to_match,
-                            record_column_to_match,
-                            fact_hash_function,
-                        )
-                    )
-                    if insert_or_update_records_to_fact["status"] != "success":
-                        return {
-                            "status": "error",
-                            "message": "Unable to insert or update location record to the fact table",
-                            "error": insert_or_update_records_to_fact["error"],
-                        }
-
-            else:
-                # update the corresponding location record in the fact table
-                fact_column_to_match = "location_id"
-                record_column_to_match = "id"
-
-                insert_or_update_records_to_fact = (
-                    insert_or_update_records_to_fact_table(
-                        location_table_id,
-                        fact_table_id,
+                    fact_record_update_status = update_fact_record(
                         record,
-                        fact_column_to_match,
-                        record_column_to_match,
                         fact_hash_function,
                     )
+
+                    fact_record = fact_record_update_status["record"]
+                    fact_records.append(fact_record)
+
+                    if fact_record_update_status["status"] != "success":
+                        return {
+                            "status": "error",
+                            "message": "Unable to update location record to the fact record",
+                            "error": fact_record_update_status["error"],
+                        }
+
+                    no_upd_data += 1
+
+            else:
+                fact_record_update_status = update_fact_record(
+                    record,
+                    fact_hash_function,
                 )
-                if insert_or_update_records_to_fact["status"] != "success":
+
+                fact_record = fact_record_update_status["record"]
+                fact_records.append(fact_record)
+
+                if fact_record_update_status["status"] != "success":
                     return {
                         "status": "error",
-                        "message": "Unable to insert or update location record to the fact table",
-                        "error": insert_or_update_records_to_fact["error"],
+                        "message": "Unable to update location record to the fact record",
+                        "error": fact_record_update_status["error"],
                     }
+
+                no_upd_data += 1
 
         logger.info(
             {
                 "status": "success",
-                "message": f"{no_data} location records have been loaded to the location table and corresponding records have been updated to the fact table",
-                "weather_records": new_records[:5],
+                "message": f"{no_data} location records have been loaded to the location table and corresponding {no_upd_data} records have been updated to the fact records",
+                "weather_records": fact_records,
             }
         )
         return {
             "status": "success",
-            "message": f"{no_data} location records have been loaded to the location table and corresponding records have been updated to the fact table",
-            "weather_records": new_records[:5],
+            "message": f"{no_data} location records have been loaded to the location table and corresponding {no_upd_data} records have been updated to the fact records",
+            "weather_records": fact_records,
         }
 
     except Exception as e:
@@ -643,9 +627,12 @@ def load_records_to_location_dim(
 def load_records_to_weather_type_dim(
     weather_data: List[Dict[str, Any]],
     dataset_id: str,
+    fact_records: List[Dict],
     fact_table_name: str,
     weather_type_table_name: str,
     weather_type_hash_function: Dict[str, str],
+    weather_type_dim_schema: List[bigquery.SchemaField],
+    weather_fact_schema: List[bigquery.SchemaField],
 ) -> Dict[str, Union[str, List[dict]]]:
     """
     This function is used to load the transformed weather records into the Weather Type
@@ -667,13 +654,13 @@ def load_records_to_weather_type_dim(
     Returns:
     {
         "status": "success",
-        "message": f"{no_data} weather type records have been loaded to the weather type table and corresponding records have been updated to the fact table",
-        "weather_records": new_records[:5],
+        "message": f"{no_data} weather type records have been loaded to the weather type table and {num_fact}
+                        corresponding records have been updated to the fact table",
+        "weather_records": fact_records,
     }
     """
 
     try:
-        client = bigquery.Client()
         create_fact_table = create_table(
             dataset_id, fact_table_name, weather_fact_schema
         )
@@ -696,11 +683,6 @@ def load_records_to_weather_type_dim(
 
         weather_type_table_id = create_weather_type_table["table_id"]
 
-        print("weather_type_table_id", weather_type_table_id)
-        fact_table_id = create_fact_table["table_id"]
-
-        print("fact_table_id", fact_table_id)
-
         weather_type_existing_data = query_bigquery_existing_data(
             weather_type_table_id, weather_data, weather_type_hash_function
         )["body"]
@@ -710,6 +692,9 @@ def load_records_to_weather_type_dim(
         no_data = 0
         new_records = []
         newly_added_ids = []
+        num_upd_data = 0
+        updated_fact_records = []
+        num_records_to_update = len(record_list)
         for record in record_list:
             if record["id"] not in existing_ids:
                 if record["id"] not in newly_added_ids:
@@ -719,19 +704,10 @@ def load_records_to_weather_type_dim(
                         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     }
-                    new_record_location_id = gen_hash_key_location_dim(record)[
-                        "hash_key"
-                    ]
-
-                    print("new_record", new_record)
-                    print("new_record_location_id", new_record_location_id)
 
                     insert_weather_type_record = insert_new_records(
                         weather_type_table_id, new_record
                     )
-
-                    print("insert_weather_type_record", insert_weather_type_record)
-                    newly_added_ids.append(new_record["id"])
 
                     if insert_weather_type_record["status"] != "success":
                         return {
@@ -740,108 +716,79 @@ def load_records_to_weather_type_dim(
                             "error": insert_weather_type_record["error"],
                         }
 
-                    fact_table_ref = client.get_table(fact_table_id)
-                    fact_records = (
-                        client.list_rows(fact_table_ref)
-                        .to_dataframe()
-                        .to_dict(orient="records")
-                    )
-
-                    print("fact_records", fact_records)
-
-                    existing_fact_records = [
-                        fact_record
-                        for fact_record in fact_records
-                        if fact_record["weather_type_id"] == new_record["id"]
-                    ]
-
-                    print("existing_fact_records", existing_fact_records)
-
-                    # if the weather_type does not exist in the fact_table update the fact_table wih weather_type_id
-                    if not existing_fact_records:
-                        existing_fact_record = [
-                            fact_record
-                            for fact_record in fact_records
-                            if fact_record["location_id"] == new_record_location_id
-                        ]
-                        print("existing_fact_recorddddd", existing_fact_record)
-
-                        update_fact_mapper = {"weather_type_id": "id", "date": "date"}
-
-                        update_fact_record = update_table_existing_record(
-                            existing_fact_record,
-                            fact_table_id,
-                            new_record,
-                            update_fact_mapper,
-                        )
-
-                        print("update_fact_record", update_fact_record)
-
-                        if update_fact_record["status"] != "success":
-                            return {
-                                "status": "error",
-                                "message": "Unable to insert corresponding weather_type_id record to the fact table",
-                                "error": update_fact_record["error"],
-                            }
-                    else:
-                        # if the weather_type exist in the fact_table update the fact_table wih the corresponding weather_type_id
-                        update_fact_mapper = {"weather_type_id": "id", "date": "date"}
-
-                        update_fact_record = update_table_existing_record(
-                            existing_fact_records,
-                            fact_table_id,
-                            new_record,
-                            update_fact_mapper,
-                        )
-                        print("update_fact_record", update_fact_record)
-                        if update_fact_record["status"] != "success":
-                            return {
-                                "status": "error",
-                                "message": "Unable to update corresponding weather_type_id record in the fact table",
-                                "error": update_fact_record["error"],
-                            }
-
-                    new_records.append(new_record)
+                    newly_added_ids.append(new_record["id"])
                     no_data += 1
 
-            else:
-                # update the corresponding weather_type record in the fact table
+                    num_upd_data = 0
+                    for record in record_list:
+                        if num_upd_data <= num_records_to_update:
+                            record_location_id = gen_hash_key_location_dim(record)[
+                                "hash_key"
+                            ]
+                            existing_fact_record = [
+                                fact_record
+                                for fact_record in fact_records
+                                if fact_record["location_id"] == record_location_id
+                            ]
 
-                fact_table_ref = client.get_table(fact_table_id)
-                fact_records = (
-                    client.list_rows(fact_table_ref)
-                    .to_dataframe()
-                    .to_dict(orient="records")
-                )
-                existing_fact_records = [
+                            record_to_update_mapper = {"weather_type_id": "id"}
+                            update_fact_record = update_existing_fact_record(
+                                existing_fact_record,
+                                new_record,
+                                record_to_update_mapper,
+                            )
+                            if update_fact_record["status"] != "success":
+                                return {
+                                    "status": "error",
+                                    "message": "Unable to insert corresponding weather_type_id record to the fact record",
+                                    "error": update_fact_record["error"],
+                                }
+
+                            updated_fact_record = update_fact_record["record"]
+                            updated_fact_records.append(updated_fact_record)
+                            num_upd_data += 1
+
+                    new_records.append(new_record)
+
+            else:
+                record_location_id = gen_hash_key_location_dim(record)["hash_key"]
+
+                existing_fact_record = [
                     fact_record
                     for fact_record in fact_records
-                    if fact_record["weather_type_id"] == record["id"]
+                    if fact_record["location_id"] == record_location_id
                 ]
 
-                update_fact_mapper = {"weather_type_id": "id", "date": "date"}
-
-                update_fact_record = update_table_existing_record(
-                    existing_fact_records, fact_table_id, record, update_fact_mapper
+                record_to_update_mapper = {"weather_type_id": "id"}
+                update_fact_record = update_existing_fact_record(
+                    existing_fact_record,
+                    record,
+                    record_to_update_mapper,
                 )
+
                 if update_fact_record["status"] != "success":
                     return {
                         "status": "error",
-                        "message": "Unable to update corresponding weather_type_id record in the fact table",
+                        "message": "Unable to insert corresponding weather_type_id record to the fact record",
                         "error": update_fact_record["error"],
                     }
+
+                updated_fact_record = update_fact_record["record"]
+                updated_fact_records.append(updated_fact_record)
+                num_upd_data += 1
 
         logger.info(
             {
                 "status": "success",
-                "message": f"{no_data} weather_type records have been loaded to the weather_type table and corresponding records have been updated to the fact table",
-                "weather_records": new_records[:5],
+                "message": f"{no_data} weather_type records have been loaded to the weather_type table and  {num_upd_data} corresponding fact_records have been updated",
+                "weather_records": updated_fact_records,
             }
         )
+
         return {
             "status": "success",
-            "message": f"{no_data} weather_type records have been loaded to the weather_type table and corresponding records have been updated to the fact table",
-            "weather_records": new_records[:5],
+            "message": f"{no_data} weather_type records have been loaded to the weather_type table and {num_upd_data} corresponding fact_records have been updated",
+            "weather_records": updated_fact_records,
         }
 
     except Exception as e:
@@ -1027,13 +974,15 @@ def create_date_dim(
 
 
 def join_date_dim_with_weather_fact(
-    fact_table_name: str, date_table_name: str, dataset_id: str
-):
+    fact_table_name: str,
+    date_table_name: str,
+    dataset_id: str,
+    fact_records: List[Dict],
+) -> Dict[str, Union[str, List[dict]]]:
     """
-    This function is used to join the date records with the weather fact table
-    The date records are joined with the weather fact table using the date field in the fact table
-    The date field in the fact table is converted to a date id using the date dimension table
-    The date id is then used to join the date records with the weather fact table
+    This function is used to join the date records with the weather fact table.
+    The date records are joined with the weather fact table using the date field in the fact table.
+    A date_id field is inserted to the fact table which is generated for each correspoonding date record in the date dimension table.
 
     Args:
         fact_table_name (str): The name of the weather fact table
@@ -1044,56 +993,50 @@ def join_date_dim_with_weather_fact(
         client = bigquery.Client()
         fact_table_ref = client.dataset(dataset_id).table(fact_table_name)
         get_fact_table_id = client.get_table(fact_table_ref)
-        fact_records = (
-            client.list_rows(get_fact_table_id).to_dataframe().to_dict(orient="records")
-        )
 
         date_table_ref = client.dataset(dataset_id).table(date_table_name)
         get_date_table_id = client.get_table(date_table_ref)
         date_records = (
             client.list_rows(get_date_table_id).to_dataframe().to_dict(orient="records")
         )
+        updated_fact_records = []
+        list_date_records = [record["date"].isoformat() for record in date_records]
 
-        if fact_records and date_records:
+        if fact_records and list_date_records:
             no_data = 0
             for fact_record in fact_records:
-                fact_record_date = fact_record["date"].strftime("%Y-%m-%d")
-                list_date_records = [
-                    date_record["date"].strftime("%Y-%m-%d")
-                    for date_record in date_records
-                ]
-
-                if list_date_records.index(fact_record_date):
-                    date_record = date_records[
-                        list_date_records.index(fact_record_date)
+                fact_record_date = fact_record["date"]
+                if fact_record_date in list_date_records:
+                    index = list_date_records.index(fact_record_date)
+                    date_record = date_records[index]
+                    fact_record_copy = fact_record.copy()
+                    filtered_keys = [
+                        col for col in list(fact_record_copy.keys()) if col != "date"
                     ]
-                    fact_record["date_id"] = date_record["id"]
-                    fact_record["date"] = fact_record["date"].isoformat()
-                    fact_record["created_at"] = fact_record["created_at"].isoformat()
-                    fact_record["updated_at"] = fact_record["updated_at"].isoformat()
-                    update_fact_record = update_records(get_fact_table_id, fact_record)
-                    no_data += 1
 
-                    if update_fact_record["status"] != "success":
+                    filtered_fact_record = {
+                        key: value
+                        for key, value in fact_record.items()
+                        if key in filtered_keys
+                    }
+                    filtered_fact_record["date_id"] = date_record["id"]
+                    filtered_fact_record["updated_at"] = datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+
+                    insert_fact_record = insert_new_records(
+                        get_fact_table_id, filtered_fact_record
+                    )
+
+                    if insert_fact_record["status"] != "success":
                         return {
                             "status": "error",
-                            "message": "Unable to update weather fact with date id",
-                            "error": update_fact_record["error"],
+                            "message": "Unable to insert date record to the fact table",
+                            "error": insert_fact_record["error"],
                         }
 
-            logger.info(
-                {
-                    "status": "success",
-                    "message": f"{no_data} Date records have been joined with the weather fact table",
-                    "weather_records": fact_records[:1],
-                }
-            )
-            return {
-                "status": "success",
-                "message": "Date records have been joined with the weather fact table",
-                "weather_records": fact_records[:1],
-            }
-
+                    updated_fact_records.append(insert_fact_record["record"])
+                    no_data += 1
         else:
             error_logger.error(
                 {
@@ -1107,6 +1050,19 @@ def join_date_dim_with_weather_fact(
                 "message": "No records found in the date or weather fact table",
                 "error": "No records found",
             }
+
+        logger.info(
+            {
+                "status": "success",
+                "message": f"{no_data} Date records have been joined with the weather fact table",
+                "weather_records": updated_fact_records,
+            }
+        )
+        return {
+            "status": "success",
+            "message": f" {no_data} Date records have been joined with the weather fact table",
+            "weather_records": updated_fact_records,
+        }
 
     except Exception as e:
         error_logger.error(

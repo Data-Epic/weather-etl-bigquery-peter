@@ -32,7 +32,6 @@ weather_fact_schema = [
     SchemaField("ultraviolet_index", "FLOAT", mode="REQUIRED"),
     SchemaField("clouds", "INTEGER", mode="REQUIRED"),
     SchemaField("visibility", "INTEGER", mode="REQUIRED"),
-    SchemaField("date", "DATE", mode="REQUIRED"),
     SchemaField("wind_speed", "FLOAT", mode="REQUIRED"),
     SchemaField("wind_deg", "INTEGER", mode="REQUIRED"),
     SchemaField("sunrise", "INTEGER", mode="REQUIRED"),
