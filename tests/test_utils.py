@@ -2,6 +2,7 @@ import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+import unittest
 import os
 from google.api_core.exceptions import NotFound, Conflict
 from requests.exceptions import RequestException
@@ -14,14 +15,13 @@ from helpers.utils import (
     gen_hash_key_weather_type_dim,
     gen_hash_key_weatherfact,
     query_bigquery_existing_data,
-    insert_data_to_fact_table,
+    update_fact_record,
+    update_existing_fact_record,
     retrieve_country_code,
-    update_data_to_fact_table,
     create_dataset,
     create_table,
     insert_new_records,
     validate_city,
-    insert_or_update_records_to_fact_table,
 )
 
 
@@ -901,213 +901,196 @@ def test_insert_new_records_error(mock_bigquery_client: MagicMock) -> None:
     assert "An error occurred" in result["message"]
 
 
-def test_insert_data_fact_table_success(
-    mock_weather_record, mock_hash_function
-) -> None:
-    """
-    Tests the insert_data_to_fact_table function for a successful case
-
-    Returns:
-        None
-    """
-
-    with patch("helpers.utils.insert_new_records") as mock_insert:
-        table_id = "test_dataset.test_table"
-
-        mock_insert.return_value = {
-            "status": "success",
-            "message": "New record is inserted successfully",
-            "record": mock_weather_record,
-        }
-
-        result = insert_data_to_fact_table(
-            table_id, mock_weather_record, mock_hash_function
-        )
-
-        assert result["status"] == "success"
-        assert (
-            result["message"] == "New records inserted successfully to the fact table"
-        )
-        assert result["record"]["id"] == "hash1"
-        assert result["record"]["location_id"] == "location1"
-        assert result["record"]["temperature"] == 25.5
-        assert isinstance(result["record"]["created_at"], str)
-        assert isinstance(result["record"]["updated_at"], str)
-        mock_insert.assert_called_once()
-
-
-def test_insert_data_fact_table_invalid_table_id(
-    mock_weather_record, mock_hash_function
-) -> None:
-    """
-    Tests the insert_data_to_fact_table function with an invalid table_id
-
-    Returns:
-        None
-    """
-    invalid_table_id = 123
-
-    with pytest.raises(ValueError, match="Invalid table ID"):
-        insert_data_to_fact_table(
-            invalid_table_id, mock_weather_record, mock_hash_function
-        )
-
-
-def test_insert_data_fact_table_invalid_record(mock_hash_function) -> None:
-    """
-    Tests the insert_data_to_fact_table function with an invalid record
-
-    Returns:
-        None
-    """
-    table_id = "test_dataset.test_table"
-    invalid_record = ["invalid"]
-
-    with pytest.raises(
-        ValueError, match="Invalid data format. Data argument must be a dictionary"
-    ):
-        insert_data_to_fact_table(table_id, invalid_record, mock_hash_function)
-
-
-def test_insert_data_fact_table_error(mock_weather_record, mock_hash_function) -> None:
-    """
-    Tests the insert_data_to_fact_table function when an error occurs
-
-    Returns:
-        None
-    """
-    with patch("helpers.utils.insert_new_records") as mock_insert:
-        table_id = "test_dataset.test_table"
-        mock_insert.side_effect = Exception("A Bigquery error occurred")
-
-        result = insert_data_to_fact_table(
-            table_id, mock_weather_record, mock_hash_function
-        )
-
-        assert result["status"] == "error"
-        assert (
-            result["message"]
-            == "An error occurred while inserting record to the fact table"
-        )
-        assert "A Bigquery error occurred" in result["error"]
-
-
-@pytest.fixture
-def mock_existing_record() -> List[Dict[str, Any]]:
-    """
-    Mock existing record for testing
-
-    Returns:
-        List[Dict[str, Any]]: List of dictionaries containing existing records
-    """
-
-    return [
-        {
-            "id": "hash1",
-            "location_id": "location1",
-            "date_id": "date1",
-            "weather_type_id": "weather_type1",
-            "temperature": 25.5,
+class TestUpdateFactRecord(unittest.TestCase):
+    def setUp(self) -> None:
+        """Set up test fixtures before each test method."""
+        self.valid_new_record = {
+            "id": "loc123",
+            "temp": 25.5,
             "feels_like": 26.0,
             "pressure": 1013,
-            "humidity": 60,
-            "dew_point": 15.5,
-            "ultraviolet_index": 7.2,
-            "clouds": 20,
+            "humidity": 65,
+            "dew_point": 18.5,
+            "ultraviolet_index": 5,
+            "clouds": 40,
             "visibility": 10000,
-            "date": datetime.datetime.strptime("2023-05-22", "%Y-%m-%d"),
-            "wind_speed": 5.5,
+            "wind_speed": 3.5,
             "wind_deg": 180,
-            "sunrise": 1621234567,
-            "sunset": 1621191234,
-            "created_at": datetime.datetime.now(),
-            "updated_at": datetime.datetime.now(),
+            "sunrise": "06:00:00",
+            "sunset": "18:00:00",
+            "date": datetime.datetime.now(),
         }
-    ]
+
+        self.mock_hash_function = MagicMock(return_value={"hash_key": "hash123"})
+
+    def test_update_fact_record_success(self) -> None:
+        """
+        Test successful fact record update with valid inputs.
+
+        Returns:
+            None
+
+        """
+        result = update_fact_record(self.valid_new_record, self.mock_hash_function)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["record"]["id"], "hash123")
+        self.assertEqual(result["record"]["location_id"], "loc123")
+        self.assertEqual(result["record"]["temperature"], 25.5)
+
+    def test_update_fact_record_invalid_hash_function(self):
+        """
+        Test with invalid hash function (non-callable).
+
+        Returns:
+            None
+
+        """
+        with self.assertRaises(ValueError) as context:
+            update_fact_record(self.valid_new_record, "not_a_function")
+
+        self.assertIn("Invalid hash function", str(context.exception))
+
+    def test_update_fact_record_invalid_record_type(self):
+        """
+        Test with invalid record type (non-dictionary).
+
+        Returns:
+            None
+        """
+
+        with self.assertRaises(ValueError) as context:
+            update_fact_record(["invalid_type"], self.mock_hash_function)
+
+        self.assertIn("Invalid data format", str(context.exception))
+
+    def test_update_fact_record_missing_required_fields(self):
+        """
+        Test with missing required fields in the record.
+
+        Returns:
+            None
+        """
+        invalid_record = {"id": "loc123"}
+
+        result = update_fact_record(invalid_record, self.mock_hash_function)
+        self.assertEqual(result["status"], "error")
+        self.assertIn("error", result)
 
 
-def test_update_data_fact_table_success(
-    mock_weather_record, mock_existing_record
-) -> None:
+class TestUpdateExistingFactRecord(unittest.TestCase):
     """
-    Tests the update_data_to_fact_table function for a successful case
+    Test for the update_existing_fact_record function in utils.py
+    It tests the function with valid and invalid inputs.
 
-    Returns:
-        None
     """
-    with patch("google.cloud.bigquery.Client") as mock_client:
-        fact_table_id = "test_dataset.test_table"
-        mock_client.return_value.list_rows.return_value.to_dataframe.return_value.to_dict.return_value = mock_existing_record
 
-        with patch("helpers.utils.update_records") as mock_update:
-            mock_update.return_value = {
-                "status": "success",
-                "message": "New records updated successfully to the fact table",
-                "record": mock_existing_record[0],
+    def setUp(self):
+        self.valid_new_record = {
+            "id": "loc123",
+            "temp": 25.5,
+            "feels_like": 26.0,
+            "pressure": 1013,
+            "humidity": 65,
+            "dew_point": 18.5,
+            "ultraviolet_index": 5,
+            "clouds": 40,
+            "visibility": 10000,
+            "wind_speed": 3.5,
+            "wind_deg": 180,
+            "sunrise": "06:00:00",
+            "sunset": "18:00:00",
+            "date": datetime.datetime.now(),
+        }
+
+        self.existing_fact_records = [
+            {
+                "id": "fact123",
+                "location_id": "loc123",
+                "temperature": 24.0,
+                "feels_like": 25.0,
+                "pressure": 1012,
+                "humidity": 60,
+                "created_at": "2024-01-01 00:00:00",
+                "updated_at": "2024-01-01 00:00:00",
             }
+        ]
 
-            result = update_data_to_fact_table(fact_table_id, mock_weather_record)
+        self.record_mapper = {
+            "temperature": "temp",
+            "feels_like": "feels_like",
+            "pressure": "pressure",
+            "humidity": "humidity",
+        }
 
-            assert result["status"] == "success"
-            assert (
-                result["message"]
-                == "New records updated successfully to the fact table"
-            )
-            assert result["record"]["id"] == "hash1"
-            assert result["record"]["location_id"] == "location1"
-            assert result["record"]["temperature"] == 25.5
-            assert isinstance(result["record"]["created_at"], str)
-            assert isinstance(result["record"]["updated_at"], str)
-            mock_update.assert_called_once()
-
-
-def test_update_data_fact_table_invalid_table_id(mock_weather_record) -> None:
-    """
-    Tests the update_data_to_fact_table function with an invalid table_id
-
-    Returns:
-        None
-    """
-    invalid_table_id = 123
-
-    with pytest.raises(ValueError, match="Invalid table ID"):
-        update_data_to_fact_table(invalid_table_id, mock_weather_record)
-
-
-def test_update_data_fact_table_invalid_record():
-    """
-    Tests the update_data_to_fact_table function with an invalid record
-
-    Returns:
-        None
-    """
-    table_id = "test_dataset.test_table"
-    invalid_record = ["invalid"]
-
-    with pytest.raises(
-        ValueError, match="Invalid data format. Data argument must be a dictionary"
-    ):
-        update_data_to_fact_table(table_id, invalid_record)
-
-
-def test_update_data_fact_table_record_not_found(mock_weather_record) -> None:
-    """
-    Tests the update_data_to_fact_table function when the record is not found
-
-    Returns:
-        None
-    """
-    with patch("google.cloud.bigquery.Client") as mock_client:
-        fact_table_id = "test_dataset.test_table"
-        mock_client.return_value.list_rows.return_value.to_dataframe.return_value.to_dict.return_value = []
-
-        result = update_data_to_fact_table(fact_table_id, mock_weather_record)
-
-        assert result["status"] == "error"
-        assert (
-            result["message"]
-            == "An error occurred while inserting record to the fact table"
+    def test_update_existing_fact_record_success(self) -> None:
+        """Test successful update of existing fact record."""
+        result = update_existing_fact_record(
+            self.existing_fact_records, self.valid_new_record, self.record_mapper
         )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["record"]["temperature"], 25.5)
+        self.assertEqual(result["record"]["humidity"], 65)
+
+    def test_update_existing_fact_record_invalid_record_type(self) -> None:
+        """
+        Test with invalid record type for existing records.
+
+        Returns:
+            None
+        """
+        with self.assertRaises(ValueError) as context:
+            update_existing_fact_record(
+                "invalid_records", self.valid_new_record, self.record_mapper
+            )
+
+        self.assertIn("must be a list", str(context.exception))
+
+    def test_update_existing_fact_record_invalid_mapper(self):
+        """
+        Test with invalid mapper type.
+
+        Returns:
+            None
+
+        """
+        with self.assertRaises(ValueError) as context:
+            update_existing_fact_record(
+                self.existing_fact_records, self.valid_new_record, "invalid_mapper"
+            )
+
+        self.assertIn("must be a dictionary", str(context.exception))
+
+    def test_update_existing_fact_record_empty_records(self):
+        """
+        Test with empty existing records list.
+
+        Returns:
+            None
+
+        """
+        result = update_existing_fact_record(
+            [], self.valid_new_record, self.record_mapper
+        )
+
+        self.assertEqual(result["status"], "error")
+
+    def test_update_existing_fact_record_invalid_mapping(self):
+        """
+        Test with invalid field mapping in mapper.
+
+        Returns:
+            None
+
+        """
+        invalid_mapper = {"temperature": "nonexistent_field"}
+
+        result = update_existing_fact_record(
+            self.existing_fact_records, self.valid_new_record, invalid_mapper
+        )
+
+        self.assertEqual(result["status"], "error")
 
 
 def test_retrieve_country_code_success() -> None:
@@ -1300,257 +1283,3 @@ def test_validate_city_multiple_countries(mock_city_api_response) -> None:
         assert "GH" in result["validated_country_cities"]
         assert "lagos" in result["validated_country_cities"]["NG"]
         assert "accra" in result["validated_country_cities"]["GH"]
-
-
-@pytest.fixture
-def fact_table_id() -> str:
-    """
-    Pytest fixture for the fact table ID
-
-    Returns:
-        str: Fact table ID
-    """
-    return "project.dataset.fact_table"
-
-
-@pytest.fixture
-def dim_table_id() -> str:
-    """
-    Pytest fixture for the dimension table ID
-
-    Returns:
-        str: Dimension table ID
-    """
-    return "project.dataset.dim_table"
-
-
-@pytest.fixture
-def fact_hash_function() -> MagicMock:
-    """
-    Pytest fixture for the hash function
-
-    Args:
-        None
-
-    Returns:
-        MagicMock: Mocked hash function object
-    """
-    return MagicMock(return_value={"hash_key": "test_hash_123"})
-
-
-@pytest.fixture
-def new_record() -> Dict[str, Any]:
-    """
-    Pytest fixture for the new record
-
-    Returns:
-        Dict[str, Any]: New record
-    """
-    return {
-        "id": "loc_123",
-        "temp": 25.5,
-        "feels_like": 26.0,
-        "pressure": 1013,
-        "humidity": 65,
-        "dew_point": 18.5,
-        "date": datetime.datetime.now(),
-    }
-
-
-@pytest.fixture
-def existing_record() -> Dict[str, Any]:
-    """
-    Pytest fixture for the existing record
-
-    Returns:
-        Dict[str, Any]: Existing record
-    """
-    return {
-        "id": "loc_123",
-        "temp": 20.0,
-        "feels_like": 21.0,
-        "pressure": 1010,
-        "humidity": 60,
-        "created_at": datetime.now(),
-        "date": datetime.datetime.now(),
-    }
-
-
-@pytest.fixture
-def record_mapper() -> Dict[str, Any]:
-    """
-    Pytest fixture for the record mapper
-
-    Returns:
-        Dict[str, Any]: Record mapper
-    """
-    return {
-        "temperature": "temp",
-        "feels_like": "feels_like",
-        "pressure": "pressure",
-        "humidity": "humidity",
-        "date": "date",
-    }
-
-
-class TestInsertOrUpdateRecordsToFactTable:
-    def test_successful_insert_new_record(
-        self, fact_table_id, dim_table_id, new_record, fact_hash_function
-    ):
-        """
-
-        Test successful insertion of a new record to the fact table
-
-        Args:
-            fact_table_id (str): Pytest fixture for the fact table ID
-            dim_table_id (str): Pytest fixture for the dimension table ID
-            new_record (Dict[str, Any]): Pytest fixture for the new record
-            fact_hash_function (MagicMock): Pytest fixture for the hash function
-
-        Returns:
-            None
-        """
-
-        with patch("google.cloud.bigquery.Client") as mock_client:
-            mock_client.return_value.list_rows.return_value.to_dataframe.return_value.to_dict.return_value = []
-
-            with patch("helpers.utils.insert_data_to_fact_table") as mock_insert:
-                mock_insert.return_value = {"status": "success"}
-
-                result = insert_or_update_records_to_fact_table(
-                    dim_table_id=dim_table_id,
-                    fact_table_id=fact_table_id,
-                    new_record=new_record,
-                    fact_column_to_match="id",
-                    new_record_column_to_match="id",
-                    fact_hash_function=fact_hash_function,
-                )
-
-                assert result["status"] == "success"
-                assert (
-                    "New records inserted or updated successfully" in result["message"]
-                )
-                assert result["record"] == new_record
-
-    def test_successful_update_existing_record(
-        self, fact_table_id, dim_table_id, new_record, fact_hash_function
-    ):
-        """
-        Test successful update of an existing record
-
-        Args:
-            fact_table_id (str): Pytest fixture for the fact table ID
-            dim_table_id (str): Pytest fixture for the dimension table ID
-            new_record (Dict[str, Any]): Pytest fixture for the new record
-            fact_hash_function (MagicMock): Pytest fixture for the hash function
-
-        Returns:
-            None
-
-        """
-        with patch("google.cloud.bigquery.Client") as mock_client:
-            mock_client.return_value.list_rows.return_value.to_dataframe.return_value.to_dict.return_value = [
-                {"id": "loc_123", "temp": 20.0}
-            ]
-
-            with patch("helpers.utils.update_data_to_fact_table") as mock_update:
-                mock_update.return_value = {"status": "success"}
-
-                result = insert_or_update_records_to_fact_table(
-                    dim_table_id=dim_table_id,
-                    fact_table_id=fact_table_id,
-                    new_record=new_record,
-                    fact_column_to_match="id",
-                    new_record_column_to_match="id",
-                    fact_hash_function=fact_hash_function,
-                )
-
-                assert result["status"] == "success"
-                assert (
-                    "New records inserted or updated successfully" in result["message"]
-                )
-
-    def test_invalid_table_id(self, new_record, fact_hash_function):
-        """
-        Tests the insert_or_update_records_to_fact_table function with an invalid table ID
-
-        Args:
-            new_record (Dict[str, Any]): Pytest fixture for the new record
-            fact_hash_function (MagicMock): Pytest fixture for the hash function
-
-        Returns:
-            None
-        """
-
-        insert_or_update = insert_or_update_records_to_fact_table(
-            dim_table_id=123,
-            fact_table_id="valid.table",
-            new_record=new_record,
-            fact_column_to_match="id",
-            new_record_column_to_match="id",
-            fact_hash_function=fact_hash_function,
-        )
-
-        assert insert_or_update["status"] == "error"
-        assert (
-            insert_or_update["message"]
-            == "An error occurred while inserting record to the fact table"
-        )
-
-    def test_invalid_record_type(self, fact_table_id, dim_table_id, fact_hash_function):
-        """
-        Tests the insert_or_update_records_to_fact_table function with an invalid record type
-
-        Args:
-            fact_table_id (str): Pytest fixture for the fact table ID
-            dim_table_id (str): Pytest fixture for the dimension table ID
-            fact_hash_function (MagicMock): Pytest fixture for the hash function
-
-        Returns:
-            None
-
-        """
-        with pytest.raises(ValueError, match="Invalid data format"):
-            insert_or_update_records_to_fact_table(
-                dim_table_id=dim_table_id,
-                fact_table_id=fact_table_id,
-                new_record=["not", "a", "dict"],
-                fact_column_to_match="id",
-                new_record_column_to_match="id",
-                fact_hash_function=fact_hash_function,
-            )
-
-    def test_insert_failure(
-        self, fact_table_id, dim_table_id, new_record, fact_hash_function
-    ):
-        """
-
-        Test the insert_or_update_records_to_fact_table function when the insertion fails
-
-        Args:
-            fact_table_id (str): Pytest fixture for the fact table ID
-            dim_table_id (str): Pytest fixture for the dimension table ID
-            new_record (Dict[str, Any]): Pytest fixture for the new record
-            fact_hash_function (MagicMock): Pytest fixture for the hash function
-
-        Returns:
-            None
-
-        """
-        with patch("google.cloud.bigquery.Client") as mock_client:
-            mock_client.return_value.list_rows.return_value.to_dataframe.return_value.to_dict.return_value = []
-
-            with patch("helpers.utils.insert_data_to_fact_table") as mock_insert:
-                mock_insert.return_value = {"status": "error", "error": "Insert failed"}
-
-                result = insert_or_update_records_to_fact_table(
-                    dim_table_id=dim_table_id,
-                    fact_table_id=fact_table_id,
-                    new_record=new_record,
-                    fact_column_to_match="id",
-                    new_record_column_to_match="id",
-                    fact_hash_function=fact_hash_function,
-                )
-
-                assert result["status"] == "error"
-                assert "error" in result

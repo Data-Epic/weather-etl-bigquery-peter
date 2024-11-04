@@ -2,8 +2,10 @@ import datetime
 from unittest.mock import MagicMock, patch
 from helpers.utils import create_dataset
 import pytest
+import unittest
 from typing import Dict
 
+from helpers.schema import weather_fact_schema, location_dim_schema
 from helpers.weather_etl import (
     get_country_code,
     get_weather_fields,
@@ -13,43 +15,13 @@ from helpers.weather_etl import (
     load_records_to_location_dim,
 )
 
-
-@pytest.fixture
-def sample_weather_data():
-    return [
-        {
-            "id": "location123",
-            "city": "New York",
-            "country": "US",
-            "state": "NY",
-            "latitude": 40.7128,
-            "longitude": -74.0060,
-            "timezone": "America/New_York",
-            "timezone_offset": -14400,
-            "temp": 15.5,
-            "feels_like": 14.8,
-            "pressure": 1015,
-            "humidity": 76,
-            "dew_point": 11.2,
-            "ultraviolet_index": 4.5,
-            "clouds": 75,
-            "visibility": 10000,
-            "wind_speed": 3.6,
-            "wind_deg": 180,
-            "weather": "Clouds",
-            "sunrise": 1635766800,
-            "sunset": 1635803400,
-            "description": "broken clouds",
-            "date": datetime.datetime.now().date(),
-        }
-    ]
-
-
 project_id = "weather-etl"
 dataset_name = "test_dataset"
-
 create_bq_dataset = create_dataset(project_id, dataset_name)
 dataset_id = create_bq_dataset["dataset_id"]
+
+sample_location_schema = location_dim_schema
+sample_weather_fact_schema = weather_fact_schema
 
 
 class TestGetCountryCode:
@@ -513,14 +485,44 @@ class TestTransformWeatherRecords:
         assert len(result["weather_records"]) == 2
 
 
-class TestLoadRecordsToLocationDim:
-    @pytest.fixture
-    def mock_bigquery_client(self):
-        with patch("google.cloud.bigquery.Client") as mock_client:
-            yield mock_client
+class TestLoadRecordsToLocationDim(unittest.TestCase):
+    def setUp(self):
+        """Set up test fixtures before each test method."""
+        self.dataset_id = dataset_id
+        self.location_table_name = "location_dim"
+        self.fact_table_name = "weather_fact"
 
-    @pytest.fixture
-    def mock_hash_function_location(self, sample_weather_data) -> Dict[str, str]:
+        self.weather_data = [
+            {
+                "city": "New York",
+                "country": "US",
+                "state": "NY",
+                "latitude": 40.7128,
+                "longitude": -74.0060,
+                "timezone": "America/New_York",
+                "timezone_offset": -4,
+                "temp": 72,
+                "feels_like": 73,
+                "pressure": 1015,
+                "humidity": 65,
+                "dew_point": 11.2,
+                "ultraviolet_index": 4.5,
+                "clouds": 75,
+                "visibility": 10000,
+                "wind_speed": 3.6,
+                "wind_deg": 180,
+                "weather": "Clouds",
+                "sunrise": 1635766800,
+                "sunset": 1635803400,
+                "date": datetime.datetime.now().date(),
+            }
+        ]
+
+        self.location_dim_schema = location_dim_schema
+
+        self.weather_fact_schema = weather_fact_schema
+
+    def mock_hash_function_location(self) -> Dict[str, str]:
         """
         Mock hash function for the location dimension table
 
@@ -546,7 +548,6 @@ class TestLoadRecordsToLocationDim:
 
         return _hash_function
 
-    @pytest.fixture
     def mock_hash_function_fact(self) -> Dict[str, str]:
         """
         Mock hash function for the fact table
@@ -563,98 +564,74 @@ class TestLoadRecordsToLocationDim:
 
         return _hash_function
 
-    @patch("helpers.utils.create_table")
-    @patch("helpers.utils.query_bigquery_existing_data")
-    @patch("helpers.utils.insert_new_records")
-    @patch("helpers.utils.insert_or_update_records_to_fact_table")
-    def test_successful_load(
-        self,
-        mock_insert_or_update_records_to_fact_table,
-        mock_insert_new_records,
-        mock_query_bigquery_existing_data,
-        mock_create_table,
-        sample_weather_data,
-        mock_hash_function_fact,
-        mock_hash_function_location,
-    ) -> None:
-        """
-        Test for successful loading of records to the location dimension table
-
-        Args:
-            mock_insert_or_update_records_to_fact_table (MagicMock): Mocked insert_or_update_records_to_fact_table pytest fixture
-            mock_insert_new_records (MagicMock): Mocked insert_new_records pytest fixture
-            mock_query_bigquery_existing_data (MagicMock): Mocked query_bigquery_existing_data pytest fixture
-            mock_create_table (MagicMock): Mocked create_table pytest fixture
-            sample_weather_data (List[Dict]): Sample weather data records
-            mock_hash_function_fact (MagicMock): Mocked hash function for the fact table
-            mock_hash_function_location (MagicMock): Mocked hash function for the location dimension table
-
-        Returns:
-            None
-        """
-        project_id = "weather-etl"
-        dataset_name = "test_dataset"
-
-        create_bq_dataset = create_dataset(project_id, dataset_name)
-        dataset_id = create_bq_dataset["dataset_id"]
-
-        mock_create_table.return_value = {
-            "status": "success",
-            "table_id": f"{dataset_id}.location_dim",
-        }
-        mock_query_bigquery_existing_data.return_value = {
-            "body": {
-                "existing_ids": [],
-                "record_list": sample_weather_data,
-            }
-        }
-
-        mock_insert_new_records.return_value = {"status": "success"}
-        mock_insert_or_update_records_to_fact_table.return_value = {"status": "success"}
-
-        location_table = "location_dim"
-        fact_table = "weather_fact"
+    def test_successful_load(self) -> None:
+        """Test successful loading of new records"""
 
         result = load_records_to_location_dim(
-            sample_weather_data,
-            dataset_id,
-            location_table,
-            fact_table,
-            mock_hash_function_location,
-            mock_hash_function_fact,
+            self.weather_data,
+            self.dataset_id,
+            self.location_table_name,
+            self.fact_table_name,
+            self.mock_hash_function_location(),
+            self.mock_hash_function_fact(),
+            self.location_dim_schema,
+            self.weather_fact_schema,
         )
 
-        assert result["status"] == "success"
-        assert "location records have been loaded" in result["message"]
+        self.assertEqual(result["status"], "success")
+        self.assertIn("weather_records", result)
+        self.assertTrue(len(result["weather_records"]) > 0)
+        self.assertIn(
+            "location records have been loaded to the location table", result["message"]
+        )
+        self.assertEqual(
+            result["weather_records"][0]["location_id"],
+            f"{self.weather_data[0]['latitude']}_{self.weather_data[0]['longitude']}",
+        )
 
-    def test_empty_weather_data(
-        self, mock_hash_function_location, mock_hash_function_fact
-    ) -> None:
-        """
-        Test for empty weather data in the load_records_to_location_dim function
+    def test_with_invalid_sample_data(self) -> None:
+        """Test the load_records_to_location_dim function with invalid sample data. It should return an error"""
 
-        Args:
-            mock_hash_function_location (MagicMock): Mocked hash function for the location dimension table
-            mock_hash_function_fact (MagicMock): Mocked hash function for the fact table
-
-        Returns:
-            None
-        """
-
-        create_bq_dataset = create_dataset(project_id, dataset_name)
-        dataset_id = create_bq_dataset["dataset_id"]
-
-        location_table = "location_dim"
-        fact_table = "weather_fact"
-        sample_data = []
+        invalid_weather_data = [
+            {"cities": ["New York", "Los Angeles"], "temperaturess": [20.5, 25.5]}
+        ]
         result = load_records_to_location_dim(
-            sample_data,
-            dataset_id,
-            location_table,
-            fact_table,
-            mock_hash_function_location,
-            mock_hash_function_fact,
+            invalid_weather_data,
+            self.dataset_id,
+            self.location_table_name,
+            self.fact_table_name,
+            self.mock_hash_function_location(),
+            self.mock_hash_function_fact(),
+            self.location_dim_schema,
+            self.weather_fact_schema,
         )
 
-        assert result["status"] == "success"
-        assert "0 location records have been loaded" in result["message"]
+        print("result", result)
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(
+            result["message"],
+            "Unable to load weather location records to the location dimension table",
+        )
+
+    def test_with_empty_sample_data(self) -> None:
+        """Test the load_records_to_location_dim function with empty sample data. It should return an error"""
+
+        empty_sample_data = []
+        result = load_records_to_location_dim(
+            empty_sample_data,
+            self.dataset_id,
+            self.location_table_name,
+            self.fact_table_name,
+            self.mock_hash_function_location(),
+            self.mock_hash_function_fact(),
+            self.location_dim_schema,
+            self.weather_fact_schema,
+        )
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(len(result["weather_records"]), 0)
+        self.assertIn(
+            "0 location records have been loaded to the location table",
+            result["message"],
+        )
