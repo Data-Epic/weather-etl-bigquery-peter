@@ -3,6 +3,11 @@
 ## Overview
 This project sets up an Airflow DAG to orchestrate an ETL pipeline that fetches, transforms, and loads weather data into BigQuery. The DAG extracts data from the OpenWeatherMap API, transforms it, and loads it into a data warehouse for further analysis.
 
+## ETL Architecture
+The ETL pipeline consists of the following components:
+![ETL Architecture](images/etl_architecture.png)
+
+
 ### Prerequisites
 - **Docker**: Install [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
 - **Git**
@@ -96,14 +101,13 @@ This will launch:
 2. Log in with the default credentials (`airflow`/`airflow`).
 3. Add your cities and countries in **Admin > Variables** (e.g., key: `CITY_NAMES`, value: `Abuja, Ife, Lagos, Accra, Pretoria`) (e.g., key: `COUNTRY_NAMES`, value: `Nigeria, South Africa, Ghana`).
 
-**Airflow UI Variables:**
-![Setting Environment Variables](images/dag_variables.jpg)
+- **Airflow UI Variables:**
+- ![Setting Environment Variables](images/dag_variables.jpg)
 
 4. Navigate to the DAGs section to manually trigger `weather_etl_dag`, or wait for it to run according to its schedule to begin and fetching and loading data.
 
-  **Airflow DAG Execution:**
-
-  ![Airflow DAG Execution](images/dags.jpg)
+- **Airflow DAG Execution:**
+- ![Airflow DAG Execution](images/dags.jpg)
 
 ### 7. Stopping and Cleaning Up Services
 To stop the services:
@@ -269,67 +273,66 @@ The processed weather records are now loaded into their modeled respective table
 
 # Weather ETL DAG Explanation
 
-1. DAG Definition:
-The DAG is defined with the following parameters:
-- Start date: October 27, 2024
-- schedule interval: 1 hour
-- Description: "Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into Bigquery"
-- Tags: ['weather']
-- Max active runs: 1
-- Render template as native object: True
+## 1. DAG Definition:
 
-2. Task Breakdown:
+  The DAG is defined with the following parameters:
+  - Start date: October 27, 2024
+  - schedule interval: 1 hour
+  - Description: "Weather ETL DAG that fetches weather data from the OpenWeather API, transforms the data and loads it into Bigquery"
+  - Tags: ['weather']
+  - Max active runs: 1
+  - Render template as native object: True
 
-a) get_country_code:
-- Retrieves country codes for the specified countries.
-- Returns a dictionary with status, message, and country codes.
+## 2. Task Breakdown:
 
-b) get_weather_fields:
-- Retrieves retrieve weather fields from the OpenWeatherMap API using the country code and validated city name that will be validated from the country city API
-- Returns a dictionary containing the status of the operation,
-  a message and the weather data
+  **(a) get_country_code:**
+  - Retrieves country codes for the specified countries.
+  - Returns a dictionary with status, message, and country codes.
 
-c) restructure_geographical_data:
-- Extracts relevant fields from the geographical records.
-- Returns a dictionary with geographical fields and the longitude/latitude data.
+  **(b) get_weather_fields:**
+  - Retrieves retrieve weather fields from the OpenWeatherMap API using the country code and validated city name  that will be validated from the country city API
+  - Returns a dictionary containing the status of the operation,
+    a message and the weather data
 
-d) merge_current_weather_data:
-- Combines the current weather data from the API with the previously retrieved country and state information.
-- Returns a list of dictionaries with complete current weather information for each city.
+  **(c) restructure_geographical_data:**
+  - Extracts relevant fields from the geographical records.
+  - Returns a dictionary with geographical fields and the longitude/latitude data.
 
-e) transform_weather_records:
-- Transforms the weather records into a more structured format.
-- Converts timestamps to datetime objects and selects specific fields.
+  **(d) merge_current_weather_data:**
+  - Combines the current weather data from the API with the previously retrieved country and state information.
+  - Returns a list of dictionaries with complete current weather information for each city.
 
-f) load_records_to_location_dim:
--  loads the transformed weather records into the Location dimension table in Bigquery.
-- It also checks if the records already exist in the weather fact table. If the records do not exist in the fact table, it inserts the records into the fact table.
-- It does not load existing records in the table to avoid duplicates.
+  **(e) transform_weather_records:**
+  - Transforms the weather records into a more structured format.
+  - Converts timestamps to datetime objects and selects specific fields.
 
-g) load_records_to_weather_type_dim:
--  loads the transformed weather records into the weather type dimension table in Bigquery.
-- It also checks if the records already exist in the weather fact table. If the records do not exist in the fact table, it inserts the records into the fact table.
-- It does not load existing records in the table to avoid duplicates.
+  **(f) load_records_to_location_dim:**
+  - It loads transformed weather records into the Location dimension table in Bigquery.
+  - It also inserts the corresponding location records into the fact record.
 
-h) create_date_dim:
-- Loads the transformed weather records into the Date Dimension table in BigQuery.
-- It also checks if the records already exist in the date dimension table. If the records do not exist in the date dimension table, it inserts the records into the date dimension
-- It does not load existing records in the table to avoid duplicates.
+  **(g) load_records_to_weather_type_dim:**
+  -  loads the transformed weather records into the weather type dimension table in Bigquery.
+  -  It also inserts the corresponding weather type records into the fact record
 
-i) join_date_dim_with_weather_fact:
-- Joins the Date Dimension table with the Weather Fact table in Bigquery.
-- It checks if the records already exist in the date dimension table and the weather fact table.
-- If the records exist in both tables, it joins the records by updating the date_id field in the weather fact table.
+  **(h) create_date_dim:**
+  - Loads the transformed weather records into the Date Dimension table in BigQuery.
+  - It also checks if the records already exist in the date dimension table. If the records do not exist in the date dimension table, it inserts the records into the date dimension
+  - It does not load existing records in the date table to avoid duplicates.
 
+  **(i) join_date_dim_with_weather_fact:**
+  - Joins the date table corresponding records with the weather fact record and loads it into the weather fact table in Bigquery.
 
-3. DAG Structure:
-
-The DAG is structured as follows:
-
-```python
+  **N.B** Wheh the pipeline runs multiple times, new rows are inserted to the fact table and not updated in order not to lose historic records, in order to have access to the latest information and also previous information available for different analysis purposes.
 
 
-with DAG(
+## 3. DAG Structure:
+
+  The DAG is structured as follows:
+
+  ```python
+
+
+  with DAG(
     dag_id="weather_etl_dag_hourly",
     start_date=datetime(2024, 10, 29),
     schedule_interval=timedelta(hours=1),
@@ -338,7 +341,7 @@ with DAG(
     tags=["weather"],
     max_active_runs=1,
     render_template_as_native_obj=True,
-) as dag:
+  ) as dag:
     create_dataset_task = PythonOperator(
         task_id="create_bigquery_dataset",
         python_callable=create_bigquery_dataset,
@@ -402,52 +405,66 @@ with DAG(
         >> join_date_dim_with_fact_task
     )
 
-```
+  ```
 
-4. How the DAG works:
+## 4. How the DAG works:
 
   - The DAG starts by getting country codes for the specified countries.
   - It then fetches geographical information for the specified cities using these country codes.
   - The geographical fields are extracted and separated into two parts: geographical information (city, country, state) and longitude/latitude data.
   - The current weather data from the API is merged with the country and state information.
   - The merged current weather records are then transformed into a more structured format.
-  - It then loads the transformed weather records into the Location dimension table in Bigquery. It also checks if the corresponding records already exist in the weather fact table. If the records do not exist in the fact table, it inserts the records into the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
-  - It loads the transformed weather records into the Weather Type Dimension table in the BigQuery. It also checks if the corresponding records already exist in the fact table. If the records do not exist in the fact table, it inserts the records in the fact table. If the corresponding records exist in the fact table, it overwrites the records in the fact table.
+  - It then loads the transformed weather records into the Location dimension table in Bigquery. It inserts the corresponding location dimension records to the fact record and doesn't load duplicate records to the location table.
+  - It loads the transformed weather records into the Weather Type Dimension table in the BigQuery. It inserts the corresponding weather type records to the fact record and doesn't load duplicate records to the weather type table
   - It loads the transformed weather records into the Date Dimension table in BigQuery. It also checks if the records already exist in the date dimension table. If the records do not exist in the date dimension table, it inserts the records into the date dimension.
-  - It now joins the Date Dimension table with the Weather Fact table in BigQuery. It checks if the records already exist in the date dimension table and the weather fact table. If the records exist in both tables, it joins the records by updating the date_id field in the weather fact table.
-  - All dimension tables in the Bigquery dataset, do not accept duplicates nor can be overwritten when the airflow DAG reruns, only the fact tables can overwritten.
+  - Joins the date table corresponding records with the weather fact record and loads it into the weather fact table in Bigquery.
 
-Configuration
-The DAG uses several configuration variables:
-
-1. AIRFLOW_COUNTRY_NAMES: List of country names to fetch weather data for.
-2. AIRFLOW_CITY_NAMES: List of city names to fetch weather data for.
-3. AIRFLOW_FIELDS: List of geographical fields to retrieve from the API.
-4. AIRFLOW_WEATHER_FIELDS_EXCLUDE: Weather fields to exclude from the API response.
-5. AIRFLOW_API_KEY: OpenWeather API key.
-6. AIRFLOW_COUNTRY_CITY_API_KEY: CountryStateCity API key.
-6. AIRFLOW_START_DATE_YEAR: The year to start creating date records from
-7. AIRFLOW_END_DATE_YEAR: The year to stop creating date records
-
-The DAG is scheduled to run every hour, ensuring that the Bigquery dataset is regularly updated with the latest weather information for the specified cities.
-
-**Airflow UI Variables:**
-![Airflow UI Variables](images/dag_variables.jpg)
+  **N.B** All dimension tables in the Bigquery dataset, do not load duplicates nor can be overwritten when the airflow DAG reruns. To access most updated information from the fact table, queries are ran that removes duplicate rows.
 
 
-**DAG Worfklow:**
-![Airflow DAG Success](images/dags.jpg)
+  Configuration
+  The DAG uses several configuration variables:
 
-5. Tables Querying in BigQuery
+  1. AIRFLOW_COUNTRY_NAMES: List of country names to fetch weather data for.
+  2. AIRFLOW_CITY_NAMES: List of city names to fetch weather data for.
+  3. AIRFLOW_FIELDS: List of geographical fields to retrieve from the API.
+  4. AIRFLOW_WEATHER_FIELDS_EXCLUDE: Weather fields to exclude from the API response.
+  5. AIRFLOW_API_KEY: OpenWeather API key.
+  6. AIRFLOW_COUNTRY_CITY_API_KEY: CountryStateCity API key.
+  7. AIRFLOW_START_DATE_YEAR: The year to start creating date records from
+  8. AIRFLOW_END_DATE_YEAR: The year to stop creating date records
 
-  - Location Table Query Result:
+  The DAG is scheduled to run every hour, ensuring that the Bigquery dataset is regularly updated with the latest weather information for the specified cities.
 
-  ![Location Table Query](images/query1.jpg)
+  - **Airflow UI Variables:**
+  - ![Airflow UI Variables](images/dag_variables.jpg)
 
-  - Weather Table Query Result:
 
-  ![Weather Table Query](images/query3.jpg)
+  - **DAG Worfklow:**
+  - ![Airflow DAG Success](images/dags.jpg)
 
-  - Date Table Query Result:
+## 5. Tables Querying in BigQuery
 
-  ![Date Table Query](images/query2.jpg)
+  - **Basic Overview Query:**
+
+    This gives a snapshot of current weather conditions across all cities sorted by temperature to quickly identify the hottest and coldest locations
+
+    ![Overview Query](images/weather_conditions_query.jpg)
+
+    ![Query Result](images/query1_result.jpg)
+
+  - **Temperature Analysis:**
+
+    This shows how actual temperature compares to "feels_like" temperature and ranks cities by warmth. This helps understand where weather factors like wind and humidity are significantly affecting perceived temperature.
+
+    ![Temperature Analysis Query](images/temp_analysis_query.jpg)
+
+    ![Query Result](images/temp_analysis_result.jpg)
+
+  - **Geographical Patterns:**
+
+    This Aggregates weather metrics by country to identify regional weather patterns and variations.
+
+    ![Geographical Patterns Query](images/geographical_weather_pattern.jpg)
+
+    ![Query Result](images/query3_result.jpg)
