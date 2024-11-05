@@ -30,12 +30,12 @@ jobs:
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-credentials.json
       OPEN_WEATHER_API_KEY: ${{ secrets.OPEN_WEATHER_API_KEY }}
       COUNTRY_CITY_API_KEY: ${{ secrets.COUNTRY_CITY_API_KEY }}
-      CITY_NAMES: lagos,ibadan,kano,accra,abuja,pretoria
-      COUNTRY_NAMES: nigeria,ghana,south africa
-      FIELDS: name,lat,lon,country,state
-      WEATHER_FIELDS_EXCLUDE: minutely,hourly,daily,alerts
-      START_DATE_YEAR: "2024"
-      END_DATE_YEAR: "2024"
+      CITY_NAMES: ${{ secrets.CITY_NAMES }}
+      COUNTRY_NAMES: ${{ secrets.COUNTRY_NAMES }}
+      FIELDS: ${{ secrets.FIELDS }}
+      WEATHER_FIELDS_EXCLUDE: ${{ secrets.WEATHER_FIELDS_EXCLUDE }}
+      START_DATE_YEAR: ${{ secrets.START_DATE_YEAR }}
+      END_DATE_YEAR: ${{ secrets.END_DATE_YEAR }}
 
     needs: pre-commit
     steps:
