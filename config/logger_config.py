@@ -5,6 +5,18 @@ from typing import Tuple
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+class LogFileFormatError(ValueError):
+    """Raised when the log file format is invalid"""
+
+    pass
+
+
+class InvalidInputTypeError(ValueError):
+    """Raised when input arguments are not strings"""
+
+    pass
+
+
 def create_log_file(
     log_file_name: str, error_log_file_name: str, var_dir: str
 ) -> Tuple[str, str]:
@@ -26,7 +38,7 @@ def create_log_file(
         isinstance(log_file_name, str)
         and isinstance(error_log_file_name, str)
         and isinstance(var_dir, str)
-    ) is True:
+    ):
         if log_file_name.endswith(".log") and error_log_file_name.endswith(".log"):
             curr_dir = os.path.dirname(os.path.abspath(__file__))
             base_dir = os.path.dirname(curr_dir)
@@ -52,10 +64,12 @@ def create_log_file(
 
             return log_file_path, error_log_file_path
         else:
-            raise ValueError("Invalid file format. Only log files are allowed")
+            raise LogFileFormatError("Invalid file format. Only log files are allowed")
 
     else:
-        raise ValueError("Invalid input arguments. Input arguments must be strings")
+        raise InvalidInputTypeError(
+            "Invalid input arguments. Input arguments must be strings"
+        )
 
 
 log_file_name = "info.log"
